@@ -1,24 +1,24 @@
 {
-	"name": "swiss-mcp",
-	"version": "0.0.0",
-	"type": "module",
-	"private": true,
-	"bin": {
-		"swiss-mcp": "src/main.ts"
-	},
-	"scripts": {
-		"start": "bun src/main.ts",
-		"check": "biome check . && bun check",
-		"fix": "biome check --write ."
-	},
-	"dependencies": {
-		"@effect/platform-bun": "^4.0.1",
-		"effect": "^4.0.1"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "^2.5.15",
-		"@effect/language-service": "^0.87.3",
-		"@types/bun": "^1.4.2",
-		"typescript": "^7.0.2"
-	}
+  "name": "swiss-mcp",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "swiss-mcp": "src/main.ts"
+  },
+  "scripts": {
+    "start": "bun src/main.ts",
+    "check": "biome check . && bun check",
+    "fix": "biome check --write ."
+  },
+  "dependencies": {
+    "@effect/platform-bun": "^4.0.1",
+    "effect": "^4.0.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@effect/language-service": "^0.87.3",
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
 }
