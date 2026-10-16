@@ -24,6 +24,9 @@ export interface ShortcutContract<I extends JsonCodec, O extends JsonCodec> {
   readonly input: I
   readonly output: O
   readonly timeout?: Duration.Input
+  // A shortcut whose last action produced nothing (e.g. a Find with no matches) prints nothing; this JSON is decoded
+  // instead. Without it, empty output is ShortcutOutputInvalid.
+  readonly whenEmpty?: string
 }
 
 // `shortcuts list --show-identifiers` prints `Name (UUID)`; names may themselves contain parentheses.
@@ -216,7 +219,11 @@ const make = Effect.gen(function* () {
 
     return yield* Schema.decodeUnknownEffect(
       Schema.fromJsonString(contract.output),
-    )(result.stdout).pipe(
+    )(
+      result.stdout.trim() === '' && contract.whenEmpty !== undefined
+        ? contract.whenEmpty
+        : result.stdout,
+    ).pipe(
       Effect.mapError(
         (cause) =>
           new ShortcutOutputInvalid({

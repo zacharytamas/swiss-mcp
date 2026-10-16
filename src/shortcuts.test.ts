@@ -225,6 +225,28 @@ describe('Shortcuts.run', () => {
     )
   })
 
+  test('decodes whenEmpty for empty output only when the contract opts in', async () => {
+    const List = Schema.Array(Schema.String)
+    const cli = fakeCli(() => ({ stdout: '\n', stderr: '', code: 0 }))
+    const run = (whenEmpty?: string) =>
+      Effect.flatMap(Shortcuts, (shortcuts) =>
+        shortcuts.run(
+          {
+            name: 'swiss-json',
+            input: Payload,
+            output: List,
+            ...(whenEmpty === undefined ? {} : { whenEmpty }),
+          },
+          { greeting: 'hi', count: 1 },
+        ),
+      )
+
+    expect(await runWith(cli.layer, run('[]'))).toEqual(Exit.succeed([]))
+    expect(failureOf(await runWith(cli.layer, run()))).toBeInstanceOf(
+      ShortcutOutputInvalid,
+    )
+  })
+
   test('reports ShortcutOutputInvalid when Shortcuts passes raw text through', async () => {
     const cli = fakeCli(() => ({ stdout: 'not json {', stderr: '', code: 0 }))
 

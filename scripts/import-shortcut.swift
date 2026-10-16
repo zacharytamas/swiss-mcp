@@ -45,9 +45,11 @@ while Date() < deadline {
   let windows = attr(AXUIElementCreateApplication(shortcuts.processIdentifier), kAXWindowsAttribute) as? [AXUIElement] ?? []
   // An editor window titled with the same name has no "Add Shortcut" button, so only an import window matches.
   for window in windows where find(window, role: "AXHeading", text: name) != nil {
-    guard let add = find(window, role: "AXButton", text: "Add Shortcut") else { continue }
+    // A shortcut that already exists shows "Replace" instead of "Add Shortcut".
+    guard let add = find(window, role: "AXButton", text: "Add Shortcut") ?? find(window, role: "AXButton", text: "Replace")
+    else { continue }
     let result = AXUIElementPerformAction(add, kAXPressAction as CFString)
-    print(result == .success ? "pressed Add Shortcut for \(name)" : "press failed: \(result.rawValue)")
+    print(result == .success ? "pressed \(text(add)) for \(name)" : "press failed: \(result.rawValue)")
     exit(result == .success ? 0 : 1)
   }
 }

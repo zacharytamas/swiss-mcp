@@ -30,7 +30,14 @@ const s = new Shortcut('swiss-due', {
 
 const aggrandize = (a: Ref, aggrandizement: Record<string, string>): Ref => ({
   ...a,
-  Value: { ...a.Value, Aggrandizements: [aggrandizement] },
+  Value: {
+    ...a.Value,
+    Aggrandizements: [
+      ...((a.Value.Aggrandizements as ReadonlyArray<Record<string, string>>) ??
+        []),
+      aggrandizement,
+    ],
+  },
 })
 const property = (a: Ref, name: string) =>
   aggrandize(a, {
@@ -71,26 +78,26 @@ const due = (intent: string, params: Record<string, unknown>) =>
     ...params,
   } as never)
 
-// Due's reminder Find returns nothing without a condition (measured on Due 26.4.4), so "every reminder" is
-// "title does not contain" a string no title has. `matching` narrows to titles containing the given text.
+// Due's reminder Find only honours "Title contains" (measured on Due 26.4.4): no condition, "does not contain",
+// "has any value" and date conditions all return nothing. So "every reminder" is "title contains any letter, digit
+// or space"; a title made only of other characters (emoji, CJK) is not listed.
+const ANY_TITLE = [...'abcdefghijklmnopqrstuvwxyz0123456789 ']
 const findReminders = (matching?: TokenString) =>
   due('ReminderEntity', {
     WFContentItemFilter: {
       WFSerializationType: 'WFContentPredicateTableTemplate',
       Value: {
-        WFActionParameterFilterPrefix: 1,
+        WFActionParameterFilterPrefix: matching ? 1 : 0,
         WFContentPredicateBoundedDate: false,
-        WFActionParameterFilterTemplates: [
-          {
-            Property: 'Title',
-            Operator: matching ? 99 : 999,
-            Removable: true,
-            Values: {
-              Unit: 4,
-              String: matching ?? text('\u0000swiss-none\u0000'),
-            },
-          },
-        ],
+        WFActionParameterFilterTemplates: (matching
+          ? [matching]
+          : ANY_TITLE.map((c) => text(c))
+        ).map((value) => ({
+          Property: 'Title',
+          Operator: 99,
+          Removable: true,
+          Values: { Unit: 4, String: value },
+        })),
       },
     },
     WFContentItemLimitEnabled: false,
@@ -107,7 +114,9 @@ const when = (
   s.action('is.workflow.actions.conditional', {
     GroupingIdentifier: gid,
     WFControlFlowMode: 0,
-    WFInput: subject(value),
+    // Without a text coercion on the subject, "is" has no type to compare and the run fails with
+    // "Please choose a value for each parameter" (measured on macOS 27.0).
+    WFInput: subject(asText(value)),
     WFCondition: 4,
     WFConditionalActionString: equals,
   })
@@ -165,8 +174,11 @@ const respond = (items: Ref) => {
   })
 }
 
-const op = (name: string, body: () => void) =>
-  when(field('op'), text(name), body)
+// SWISS_DUE_OPS=reminders.list,timers.stop builds a shortcut with only those ops, for isolating a failing action.
+const only = process.env.SWISS_DUE_OPS?.split(',')
+const op = (name: string, body: () => void) => {
+  if (!only || only.includes(name)) when(field('op'), text(name), body)
+}
 
 op('reminders.list', () =>
   respond(
