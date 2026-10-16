@@ -17,5 +17,5 @@
     "noImplicitOverride": true,
     "plugins": [{ "name": "@effect/language-service" }]
   },
-  "include": ["src"]
+  "include": ["src", "scripts"]
 }
