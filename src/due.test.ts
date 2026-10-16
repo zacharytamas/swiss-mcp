@@ -149,6 +149,22 @@ describe.each(['2025-06-18', '2025-11-25'])(
       },
     )
 
+    test('rejects a date that does not exist instead of rolling it into the next month', async () => {
+      await Bun.write(join(dir, 'last-input.json'), 'untouched')
+
+      const reply = await callTool(
+        version,
+        'due_create_reminder',
+        { title: 'Pay rent', dueDate: '2026-02-30T09:00Z' },
+        '[]',
+      )
+
+      expect(reply.error?.code).toBe(-32602)
+      expect(await Bun.file(join(dir, 'last-input.json')).text()).toBe(
+        'untouched',
+      )
+    })
+
     test('accepts an ISO date with fractional seconds, as Date.toISOString() writes it', async () => {
       const reply = await callTool(
         version,
