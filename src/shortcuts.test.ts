@@ -1,11 +1,20 @@
 import { describe, expect, test } from 'bun:test'
 import { BunFileSystem } from '@effect/platform-bun'
-import { Deferred, Effect, Exit, Layer, Schema, Sink, Stream } from 'effect'
+import {
+  Cause,
+  Deferred,
+  Effect,
+  Exit,
+  Layer,
+  Schema,
+  Sink,
+  Stream,
+} from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import {
+  parseListing,
   type ShortcutContract,
   ShortcutFailed,
-  ShortcutId,
   ShortcutInputInvalid,
   ShortcutNotFound,
   ShortcutOutputInvalid,
@@ -14,176 +23,176 @@ import {
 } from './shortcuts.ts'
 
 const ID = '46CFA397-9F0C-4CE9-92B1-3C92D17C8EB3'
+const LISTING = `Log Water (11111111-1111-4111-8111-111111111111)\nswiss-json (${ID})\n`
 const Payload = Schema.Struct({ greeting: Schema.String, count: Schema.Number })
 const contract: ShortcutContract<typeof Payload, typeof Payload> = {
   name: 'swiss-json',
-  id: Schema.decodeUnknownSync(ShortcutId)(ID),
   input: Payload,
   output: Payload,
 }
-
-const encoder = new TextEncoder()
-const text = (value: string) => Stream.succeed(encoder.encode(value))
 
 type Reply = {
   readonly stdout: string
   readonly stderr: string
   readonly code: number
 }
+type Spawned = {
+  readonly args: ReadonlyArray<string>
+  readonly stdin: unknown
+  readonly inputJson?: string
+}
 
-const fakeLayer = (
-  script: (command: ChildProcess.Command) => Effect.Effect<Reply>,
-) =>
-  Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
+const bytes = (value: string) => Stream.succeed(new TextEncoder().encode(value))
+
+const handleFor = (reply: Reply) =>
+  ChildProcessSpawner.makeHandle({
+    pid: ChildProcessSpawner.ProcessId(1),
+    exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(reply.code)),
+    isRunning: Effect.succeed(false),
+    kill: () => Effect.void,
+    stdin: Sink.drain,
+    stdout: bytes(reply.stdout),
+    stderr: bytes(reply.stderr),
+    all: bytes(reply.stdout + reply.stderr),
+    getInputFd: () => Sink.drain,
+    getOutputFd: () => Stream.empty,
+    unref: Effect.succeed(Effect.void),
+  })
+
+// Answers `list` with LISTING and `run` with `onRun`, recording every spawn and the JSON Shortcuts would receive.
+const fakeCli = (onRun: (inputJson: string) => Reply, listing = LISTING) => {
+  const spawned: Array<Spawned> = []
+  const layer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
     ChildProcessSpawner.make((command) =>
       Effect.gen(function* () {
-        if (!ChildProcess.isStandardCommand(command)) {
-          return yield* Effect.die('expected a standard command')
+        if (!ChildProcess.isStandardCommand(command))
+          return yield* Effect.die('piped command')
+        const { args, options } = command
+        if (args[0] === 'list') {
+          spawned.push({ args, stdin: options.stdin })
+          return handleFor({ stdout: listing, stderr: '', code: 0 })
         }
-        const reply = yield* script(command)
-        return ChildProcessSpawner.makeHandle({
-          pid: ChildProcessSpawner.ProcessId(1),
-          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(reply.code)),
-          isRunning: Effect.succeed(false),
-          kill: () => Effect.void,
-          stdin: Sink.drain,
-          stdout: text(reply.stdout),
-          stderr: text(reply.stderr),
-          all: text(`${reply.stdout}${reply.stderr}`),
-          getInputFd: () => Sink.drain,
-          getOutputFd: () => Stream.empty,
-          unref: Effect.succeed(Effect.void),
-        })
+        const inputJson = yield* Effect.promise(() =>
+          Bun.file(args[3] ?? '').text(),
+        )
+        spawned.push({ args, stdin: options.stdin, inputJson })
+        return handleFor(onRun(inputJson))
       }),
     ),
   )
+  return { spawned, layer }
+}
 
-const run = <A, E>(effect: Effect.Effect<A, E, Shortcuts>) =>
+const runWith = <A, E>(
+  layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>,
+  effect: Effect.Effect<A, E, Shortcuts>,
+) =>
   Effect.runPromiseExit(
     effect.pipe(
       Effect.provide(Shortcuts.layer),
-      Effect.provide(Layer.unwrap(Effect.sync(() => fakeLayer(script)))),
+      Effect.provide(layer),
       Effect.provide(BunFileSystem.layer),
     ),
   )
 
-let script: (command: ChildProcess.Command) => Effect.Effect<Reply>
+const failureOf = <A, E>(exit: Exit.Exit<A, E>) =>
+  Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
 
-const calls: Array<ReadonlyArray<string>> = []
+const call = (input: unknown, c: typeof contract = contract) =>
+  Effect.flatMap(Shortcuts, (shortcuts) =>
+    shortcuts.run(c, input as typeof Payload.Type),
+  )
 
-const installed = (present: boolean): Reply => ({
-  stdout: present
-    ? `swiss-json (${ID})\n`
-    : 'other (11111111-1111-4111-8111-111111111111)\n',
-  stderr: '',
-  code: 0,
+describe('parseListing', () => {
+  test('keeps parentheses inside names and skips lines without an id', () => {
+    expect<Record<string, string>>(
+      Object.fromEntries(
+        parseListing(`Stop (Driving) Task (${ID})\nnot a shortcut line\n\n`),
+      ),
+    ).toEqual({ 'Stop (Driving) Task': ID })
+  })
 })
 
 describe('Shortcuts.run', () => {
-  test('decodes the shortcut output and writes the exact input JSON', async () => {
-    calls.length = 0
-    script = (command) => {
-      if (!ChildProcess.isStandardCommand(command))
-        return Effect.die('not standard')
-      calls.push(command.args)
-      expect(command.options.stdin).toBe('ignore')
-      if (command.args[0] === 'list') return Effect.succeed(installed(true))
-      const inputPath = command.args[3]
-      if (inputPath === undefined) return Effect.die('missing input path')
-      return Effect.promise(() => Bun.file(inputPath).text()).pipe(
-        Effect.map((json) => ({ stdout: json, stderr: '', code: 0 })),
-      )
-    }
+  test('resolves the name, sends exact JSON with stdin closed, and decodes typed output', async () => {
+    const cli = fakeCli((json) => ({ stdout: json, stderr: '', code: 0 }))
 
-    const exit = await run(
-      Effect.flatMap(Shortcuts, (shortcuts) =>
-        shortcuts.run(contract, { greeting: 'héllo', count: 2 }),
-      ),
+    const exit = await runWith(
+      cli.layer,
+      call({ greeting: 'Zoë 🎉', count: 2 }),
     )
 
-    expect(Exit.isSuccess(exit) ? exit.value : exit).toEqual({
-      greeting: 'héllo',
-      count: 2,
-    })
-    expect(calls[0]).toEqual([
-      'run',
-      ID,
-      '-i',
-      calls[0]?.[3] ?? '',
-      '-o',
-      '-',
-      '--output-type',
-      'public.plain-text',
+    expect(exit).toEqual(Exit.succeed({ greeting: 'Zoë 🎉', count: 2 }))
+    expect(
+      cli.spawned.map(({ args, stdin, inputJson }) => ({
+        args: [...args],
+        stdin,
+        inputJson,
+      })),
+    ).toEqual([
+      {
+        args: ['list', '--show-identifiers'],
+        stdin: 'ignore',
+        inputJson: undefined,
+      },
+      {
+        args: [
+          'run',
+          ID,
+          '-i',
+          cli.spawned[1]?.args[3] ?? '',
+          '-o',
+          '-',
+          '--output-type',
+          'public.plain-text',
+        ],
+        stdin: 'ignore',
+        inputJson: '{"greeting":"Zoë 🎉","count":2}',
+      },
     ])
   })
 
-  test('rejects an excess input key before spawning', async () => {
-    calls.length = 0
-    script = () => {
-      calls.push(['spawned'])
-      return Effect.succeed(installed(true))
-    }
+  test('rejects an unknown input key before touching the CLI', async () => {
+    const cli = fakeCli(() => ({ stdout: '', stderr: '', code: 0 }))
 
-    const exit = await run(
-      Effect.flatMap(Shortcuts, (shortcuts) =>
-        shortcuts.run(contract, {
-          greeting: 'hi',
-          count: 1,
-          extra: true,
-        } as never),
-      ),
+    const exit = await runWith(
+      cli.layer,
+      call({ greeting: 'hi', count: 1, extra: true }),
     )
 
-    const error = Exit.isFailure(exit) ? exit.cause.reasons[0] : undefined
-    expect(error && 'error' in error ? error.error : exit).toEqual(
+    expect(failureOf(exit)).toEqual(
       new ShortcutInputInvalid({
         shortcut: 'swiss-json',
         message:
           'swiss-json input is invalid: Expected no excess property\n  at ["extra"]',
       }),
     )
-    expect(calls).toEqual([])
+    expect(cli.spawned).toEqual([])
   })
 
-  test('reports ShortcutNotFound when the id is absent from the listing', async () => {
-    script = (command) =>
-      Effect.succeed(
-        ChildProcess.isStandardCommand(command) && command.args[0] === 'list'
-          ? installed(false)
-          : { stdout: '', stderr: 'Error: missing\n', code: 1 },
-      )
-
-    const exit = await run(
-      Effect.flatMap(Shortcuts, (shortcuts) =>
-        shortcuts.run(contract, { greeting: 'hi', count: 1 }),
-      ),
+  test('reports ShortcutNotFound when the name is not in the library', async () => {
+    const cli = fakeCli(
+      () => ({ stdout: '', stderr: '', code: 0 }),
+      'Log Water (11111111-1111-4111-8111-111111111111)\n',
     )
 
-    const error = Exit.isFailure(exit) ? exit.cause.reasons[0] : undefined
-    expect(error && 'error' in error ? error.error : exit).toEqual(
+    const exit = await runWith(cli.layer, call({ greeting: 'hi', count: 1 }))
+
+    expect(failureOf(exit)).toEqual(
       new ShortcutNotFound({
         shortcut: 'swiss-json',
-        message: `swiss-json (${ID}) is not installed in Shortcuts`,
+        message: 'The shortcut "swiss-json" is not installed in Shortcuts.',
       }),
     )
+    expect(cli.spawned.map(({ args }) => args[0])).toEqual(['list'])
   })
 
-  test('reports ShortcutFailed with stderr when the id is installed', async () => {
-    script = (command) =>
-      Effect.succeed(
-        ChildProcess.isStandardCommand(command) && command.args[0] === 'list'
-          ? installed(true)
-          : { stdout: '', stderr: 'boom\n', code: 1 },
-      )
+  test('reports ShortcutFailed with stderr on a non-zero exit', async () => {
+    const cli = fakeCli(() => ({ stdout: '', stderr: 'boom\n', code: 1 }))
 
-    const exit = await run(
-      Effect.flatMap(Shortcuts, (shortcuts) =>
-        shortcuts.run(contract, { greeting: 'hi', count: 1 }),
-      ),
-    )
+    const exit = await runWith(cli.layer, call({ greeting: 'hi', count: 1 }))
 
-    const error = Exit.isFailure(exit) ? exit.cause.reasons[0] : undefined
-    expect(error && 'error' in error ? error.error : exit).toEqual(
+    expect(failureOf(exit)).toEqual(
       new ShortcutFailed({
         shortcut: 'swiss-json',
         exitCode: 1,
@@ -193,17 +202,12 @@ describe('Shortcuts.run', () => {
     )
   })
 
-  test('reports ShortcutOutputInvalid when stdout is not the output schema', async () => {
-    script = () => Effect.succeed({ stdout: 'not json {', stderr: '', code: 0 })
+  test('reports ShortcutOutputInvalid when Shortcuts passes raw text through', async () => {
+    const cli = fakeCli(() => ({ stdout: 'not json {', stderr: '', code: 0 }))
 
-    const exit = await run(
-      Effect.flatMap(Shortcuts, (shortcuts) =>
-        shortcuts.run(contract, { greeting: 'hi', count: 1 }),
-      ),
-    )
+    const exit = await runWith(cli.layer, call({ greeting: 'hi', count: 1 }))
 
-    const error = Exit.isFailure(exit) ? exit.cause.reasons[0] : undefined
-    expect(error && 'error' in error ? error.error : exit).toEqual(
+    expect(failureOf(exit)).toEqual(
       new ShortcutOutputInvalid({
         shortcut: 'swiss-json',
         output: 'not json {',
@@ -212,22 +216,35 @@ describe('Shortcuts.run', () => {
     )
   })
 
-  test('reports ShortcutTimedOut when the process never exits', async () => {
+  test('reports ShortcutTimedOut and kills a run that never exits', async () => {
+    let killed = false
     const hanging = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
-      ChildProcessSpawner.make(() =>
+      ChildProcessSpawner.make((command) =>
         Effect.gen(function* () {
+          if (
+            ChildProcess.isStandardCommand(command) &&
+            command.args[0] === 'list'
+          ) {
+            return handleFor({ stdout: LISTING, stderr: '', code: 0 })
+          }
           const done = yield* Deferred.make<number>()
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              killed = true
+            }).pipe(Effect.andThen(Deferred.succeed(done, 143))),
+          )
           return ChildProcessSpawner.makeHandle({
-            pid: ChildProcessSpawner.ProcessId(1),
-            exitCode: Effect.map(Deferred.await(done), (code) =>
-              ChildProcessSpawner.ExitCode(code),
+            pid: ChildProcessSpawner.ProcessId(2),
+            exitCode: Effect.map(
+              Deferred.await(done),
+              ChildProcessSpawner.ExitCode,
             ),
             isRunning: Effect.map(Deferred.isDone(done), (settled) => !settled),
-            kill: () => Deferred.succeed(done, 143).pipe(Effect.asVoid),
+            kill: () => Effect.asVoid(Deferred.succeed(done, 143)),
             stdin: Sink.drain,
-            stdout: Stream.empty,
-            stderr: Stream.empty,
-            all: Stream.empty,
+            stdout: Stream.never,
+            stderr: Stream.never,
+            all: Stream.never,
             getInputFd: () => Sink.drain,
             getOutputFd: () => Stream.empty,
             unref: Effect.succeed(Effect.void),
@@ -235,29 +252,20 @@ describe('Shortcuts.run', () => {
         }),
       ),
     )
-    const timed: ShortcutContract<typeof Payload, typeof Payload> = {
-      ...contract,
-      timeout: '10 millis',
-    }
 
-    const exit = await Effect.runPromiseExit(
-      Effect.flatMap(Shortcuts, (shortcuts) =>
-        shortcuts.run(timed, { greeting: 'hi', count: 1 }),
-      ).pipe(
-        Effect.provide(Shortcuts.layer),
-        Effect.provide(hanging),
-        Effect.provide(BunFileSystem.layer),
-      ),
+    const exit = await runWith(
+      hanging,
+      call({ greeting: 'hi', count: 1 }, { ...contract, timeout: '20 millis' }),
     )
 
-    const error = Exit.isFailure(exit) ? exit.cause.reasons[0] : undefined
-    expect(error && 'error' in error ? error.error : exit).toEqual(
+    expect(failureOf(exit)).toEqual(
       new ShortcutTimedOut({
         shortcut: 'swiss-json',
-        timeoutMs: 10,
+        timeoutMs: 20,
         message:
-          'swiss-json timed out after 10 ms. It may still have run, so do not retry blindly. A pending macOS permission prompt is the usual cause.',
+          'swiss-json timed out after 20 ms. It may still have run, so do not retry blindly. A pending macOS permission prompt is the usual cause.',
       }),
     )
+    expect(killed).toBe(true)
   })
 })

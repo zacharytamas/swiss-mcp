@@ -21,11 +21,23 @@ type JsonCodec = Schema.Codec<unknown, unknown, never, never>
 
 export interface ShortcutContract<I extends JsonCodec, O extends JsonCodec> {
   readonly name: string
-  readonly id: ShortcutId
   readonly input: I
   readonly output: O
   readonly timeout?: Duration.Input
 }
+
+// `shortcuts list --show-identifiers` prints `Name (UUID)`; names may themselves contain parentheses.
+export const parseListing = (
+  listing: string,
+): ReadonlyMap<string, ShortcutId> =>
+  new Map(
+    listing.split('\n').flatMap((line) => {
+      const match = /^(.*) \(([0-9A-Fa-f-]{36})\)$/.exec(line)
+      return match?.[1] !== undefined && match[2] !== undefined
+        ? [[match[1], ShortcutId.make(match[2])] as const]
+        : []
+    }),
+  )
 
 const fields = { shortcut: Schema.String, message: Schema.String }
 
@@ -83,20 +95,37 @@ const make = Effect.gen(function* () {
       }),
     )
 
-  // The CLI's "not found" message is localized, so absence is confirmed from the listing instead.
-  const isInstalled = (id: ShortcutId) =>
-    exec(['list', '--show-identifiers']).pipe(
-      Effect.map(
-        ({ stdout, code }) =>
-          code !== 0 ||
-          stdout
-            .split('\n')
-            .some((line) =>
-              line.toLowerCase().endsWith(`(${id.toLowerCase()})`),
-            ),
+  const resolve = Effect.fn('Shortcuts.resolve')(function* (
+    shortcut: string,
+  ): Effect.fn.Return<ShortcutId, ShortcutFailed | ShortcutNotFound> {
+    const listing = yield* exec(['list', '--show-identifiers']).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ShortcutFailed({
+            shortcut,
+            exitCode: -1,
+            stderr: '',
+            message: `could not list shortcuts: ${cause.message}`,
+          }),
       ),
-      Effect.orElseSucceed(() => true),
     )
+    if (listing.code !== 0) {
+      return yield* new ShortcutFailed({
+        shortcut,
+        exitCode: listing.code,
+        stderr: listing.stderr,
+        message: `could not list shortcuts (exit ${listing.code}): ${listing.stderr.trim()}`,
+      })
+    }
+    const id = parseListing(listing.stdout).get(shortcut)
+    if (id === undefined) {
+      return yield* new ShortcutNotFound({
+        shortcut,
+        message: `The shortcut "${shortcut}" is not installed in Shortcuts.`,
+      })
+    }
+    return id
+  })
 
   const run = Effect.fn('Shortcuts.run')(function* <
     I extends JsonCodec,
@@ -127,6 +156,7 @@ const make = Effect.gen(function* () {
       ),
     )
 
+    const id = yield* resolve(shortcut)
     const timeout = Duration.fromInputUnsafe(contract.timeout ?? '30 seconds')
     const result = yield* Effect.scoped(
       Effect.gen(function* () {
@@ -137,7 +167,7 @@ const make = Effect.gen(function* () {
         yield* fs.writeFileString(inputPath, json)
         return yield* exec([
           'run',
-          contract.id,
+          id,
           '-i',
           inputPath,
           '-o',
@@ -162,12 +192,6 @@ const make = Effect.gen(function* () {
     )
 
     if (result.code !== 0) {
-      if (!(yield* isInstalled(contract.id))) {
-        return yield* new ShortcutNotFound({
-          shortcut,
-          message: `${shortcut} (${contract.id}) is not installed in Shortcuts`,
-        })
-      }
       return yield* failed(
         result.code,
         result.stderr,
