@@ -11,7 +11,7 @@ const Timer = Schema.Struct({ name: Schema.String })
 const Name = Schema.String.check(Schema.isNonEmpty())
 const IsoDateTime = Schema.String.check(
   Schema.isPattern(
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})$/,
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/,
   ),
 ).annotate({
   description:
@@ -27,15 +27,20 @@ const ByTitleAt = { title: Name, dueDate: IsoDateTime }
 const ByTitleAtLocal = { title: Name, dueDate: LocalWallClock }
 const ByName = { name: Name }
 
-// A Find with no matches ends swiss-due before its output step, so Shortcuts prints nothing (measured on Due
-// 26.4.4). Every Due op answers with a list, so nothing means an empty one.
 const contract = <I extends Schema.Top, O extends Schema.Top>(
   input: I,
   output: O,
-) => ({ name: SHORTCUT, input, output, whenEmpty: '[]' })
+) => ({ name: SHORTCUT, input, output })
+
+// A Find with no matches ends swiss-due before its output step, so Shortcuts prints nothing (measured on Due
+// 26.4.4). Only the ops that start with a Find may answer that way; for the others, silence stays an error.
+const viaFind = <I extends Schema.Top, O extends Schema.Top>(
+  input: I,
+  output: O,
+) => ({ ...contract(input, output), whenEmpty: '[]' })
 
 const contracts = {
-  listReminders: contract(
+  listReminders: viaFind(
     Schema.Struct({ op: Schema.Literal('reminders.list') }),
     Schema.Array(Reminder),
   ),
@@ -46,11 +51,11 @@ const contracts = {
     }),
     Schema.Array(Reminder),
   ),
-  completeReminder: contract(
+  completeReminder: viaFind(
     Schema.Struct({ op: Schema.Literal('reminders.complete'), ...ByTitle }),
     Schema.Array(Titled),
   ),
-  rescheduleReminder: contract(
+  rescheduleReminder: viaFind(
     Schema.Struct({
       op: Schema.Literal('reminders.reschedule'),
       ...ByTitleAtLocal,
@@ -101,7 +106,7 @@ const dueTool = <
   description: string,
   parameters: P,
   success: S,
-  readonly: boolean,
+  effect: 'reads' | 'adds' | 'changes',
 ) =>
   Tool.make(name, {
     description,
@@ -111,8 +116,8 @@ const dueTool = <
     failureMode: 'return',
   })
     .annotate(Tool.Strict, true)
-    .annotate(Tool.Readonly, readonly)
-    .annotate(Tool.Destructive, false)
+    .annotate(Tool.Readonly, effect === 'reads')
+    .annotate(Tool.Destructive, effect === 'changes')
     .annotate(Tool.OpenWorld, false)
 
 const noMatch = 'an empty list means none matched'
@@ -127,52 +132,52 @@ const timers = <S extends Schema.Top>(items: S) =>
 export const DueToolkit = Toolkit.make(
   dueTool(
     'due_list_reminders',
-    'List all reminders in the Due app with their due dates.',
+    "List the Due app's reminders with their due dates. Due's Shortcuts search can only match title text, so this lists reminders whose title contains a letter, digit or space; a title made only of emoji, CJK or punctuation is left out. due_complete_reminder and due_reschedule_reminder still find those by exact title.",
     Tool.EmptyParams,
     reminders(contracts.listReminders.output),
-    true,
+    'reads',
   ),
   dueTool(
     'due_create_reminder',
     'Create a one-time reminder in the Due app.',
     Schema.Struct(ByTitleAt),
     reminders(contracts.createReminder.output),
-    false,
+    'adds',
   ),
   dueTool(
     'due_complete_reminder',
     `Mark every Due reminder whose title matches exactly as done. Returns the reminders marked done; ${noMatch}.`,
     Schema.Struct(ByTitle),
     reminders(contracts.completeReminder.output),
-    false,
+    'changes',
   ),
   dueTool(
     'due_reschedule_reminder',
     `Move every Due reminder whose title matches exactly to a new due date. Returns the reminders that moved; ${noMatch}.`,
     Schema.Struct(ByTitleAt),
     reminders(contracts.rescheduleReminder.output),
-    false,
+    'changes',
   ),
   dueTool(
     'due_start_timer',
     `Start the Due timer with this exact name. ${unknownTimer}`,
     Schema.Struct(ByName),
     timers(contracts.startTimer.output),
-    false,
+    'changes',
   ),
   dueTool(
     'due_pause_timer',
     `Pause the Due timer with this exact name. ${unknownTimer}`,
     Schema.Struct(ByName),
     timers(contracts.pauseTimer.output),
-    false,
+    'changes',
   ),
   dueTool(
     'due_stop_timer',
     `Stop the Due timer with this exact name. ${unknownTimer}`,
     Schema.Struct(ByName),
     timers(contracts.stopTimer.output),
-    false,
+    'changes',
   ),
 )
 

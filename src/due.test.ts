@@ -126,5 +126,41 @@ describe.each(['2025-06-18', '2025-11-25'])(
         'ShortcutOutputInvalid',
       )
     })
+
+    test.each([
+      ['due_complete_reminder', { title: 'Nope' }, false],
+      [
+        'due_reschedule_reminder',
+        { title: 'Nope', dueDate: '2026-11-02T14:30:00Z' },
+        false,
+      ],
+      [
+        'due_create_reminder',
+        { title: 'New', dueDate: '2026-11-02T14:30:00Z' },
+        true,
+      ],
+      ['due_start_timer', { name: 'Task' }, true],
+    ] as const)(
+      'empty shortcut output from %s is an error only where Due always answers',
+      async (tool, args, isError) => {
+        const reply = await callTool(version, tool, args, '')
+
+        expect(reply.result.isError).toBe(isError)
+      },
+    )
+
+    test('accepts an ISO date with fractional seconds, as Date.toISOString() writes it', async () => {
+      const reply = await callTool(
+        version,
+        'due_create_reminder',
+        { title: 'Pay rent', dueDate: '2026-11-02T14:30:00.000Z' },
+        '[{"title":"Pay rent","dueDate":"2026-11-02T09:30:00-05:00"}]',
+      )
+
+      expect(reply.result.isError).toBe(false)
+      expect(
+        (await Bun.file(join(dir, 'last-input.json')).json()).dueDate,
+      ).toBe('2026-11-02 09:30')
+    })
   },
 )
