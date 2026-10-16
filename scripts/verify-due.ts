@@ -1,5 +1,5 @@
 // Run after importing dist/swiss-due.shortcut. Calls the Due tools through the real MCP server and checks what Due reports back.
-// Default: read-only (list reminders and timers). --write: create, reschedule and complete a throwaway reminder.
+// Default: read-only (list reminders). --write: create, reschedule and complete a throwaway reminder.
 // --timer <name>: also start, pause and stop that existing timer.
 type Item = Record<string, unknown>
 

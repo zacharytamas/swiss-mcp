@@ -20,18 +20,22 @@ Each app integration is a Shortcuts shortcut generated from code. The server run
 
 ```sh
 bun install
-bun scripts/build-due-shortcut.ts   # writes and signs dist/swiss-due.shortcut
-open dist/swiss-due.shortcut        # click "Add Shortcut"
+bun scripts/build-due-shortcut.ts                       # writes and signs dist/swiss-due.shortcut
+swift scripts/import-shortcut.swift dist/swiss-due.shortcut   # presses "Add Shortcut" (or "Replace")
 ```
 
-Shortcuts has no way to import a shortcut without that click. The first run may also ask to allow `swiss-due` to use Due; choose **Always Allow**, or background runs stall until the prompt is answered. Re-importing after a rebuild repeats both steps.
+Shortcuts only imports through its "Add Shortcut" window. `import-shortcut.swift` presses the button for you if your terminal has Accessibility permission (System Settings → Privacy & Security → Accessibility); otherwise `open dist/swiss-due.shortcut` and click it. The screen must be unlocked.
+
+The first run asks to allow `swiss-due` to use Due, and background runs stall until it's answered. Start a run and, while it waits, `swift scripts/allow-shortcut.swift swiss-due` presses Allow for that one shortcut. A rebuilt shortcut that imports as a new shortcut asks again.
 
 Check it end to end:
 
 ```sh
-bun scripts/verify-due.ts           # read-only: list reminders and timers
+bun scripts/verify-due.ts           # read-only: list reminders
 bun scripts/verify-due.ts --write   # also creates, reschedules and completes a throwaway reminder
 ```
+
+Known limits, measured on Due 26.4.4: reminders whose title has no letter, digit or space aren't listed; there's no way to list timers; an unknown timer name times out after 10 seconds.
 
 ## Development
 
