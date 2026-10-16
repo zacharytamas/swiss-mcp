@@ -36,22 +36,32 @@ func find(_ e: AXUIElement, role: String, text want: String, depth: Int = 0) -> 
   return nil
 }
 
+// Importing over an existing shortcut takes two presses: "Add Shortcut", then "Replace" in a follow-up prompt.
+// Keep pressing whichever appears until no import window for this name is left.
 NSWorkspace.shared.open(URL(fileURLWithPath: path))
-let deadline = Date().addingTimeInterval(15)
+let deadline = Date().addingTimeInterval(20)
+var pressed: [String] = []
 while Date() < deadline {
   Thread.sleep(forTimeInterval: 0.25)
   guard let shortcuts = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.shortcuts").first
   else { continue }
   let windows = attr(AXUIElementCreateApplication(shortcuts.processIdentifier), kAXWindowsAttribute) as? [AXUIElement] ?? []
-  // An editor window titled with the same name has no "Add Shortcut" button, so only an import window matches.
-  for window in windows where find(window, role: "AXHeading", text: name) != nil {
-    // A shortcut that already exists shows "Replace" instead of "Add Shortcut".
-    guard let add = find(window, role: "AXButton", text: "Add Shortcut") ?? find(window, role: "AXButton", text: "Replace")
-    else { continue }
-    let result = AXUIElementPerformAction(add, kAXPressAction as CFString)
-    print(result == .success ? "pressed \(text(add)) for \(name)" : "press failed: \(result.rawValue)")
-    exit(result == .success ? 0 : 1)
+  // An editor window titled with the same name has neither button, so only import windows and their prompts match.
+  let buttons = windows.compactMap { window -> AXUIElement? in
+    guard find(window, role: "AXHeading", text: name) != nil || !pressed.isEmpty else { return nil }
+    return find(window, role: "AXButton", text: "Replace") ?? find(window, role: "AXButton", text: "Add Shortcut")
   }
+  guard let button = buttons.first else {
+    if !pressed.isEmpty {
+      print("imported \(name) (pressed \(pressed.joined(separator: ", ")))")
+      exit(0)
+    }
+    continue
+  }
+  let label = text(button)
+  guard AXUIElementPerformAction(button, kAXPressAction as CFString) == .success else { continue }
+  pressed.append(label)
 }
-FileHandle.standardError.write("no import window for \(name) appeared\n".data(using: .utf8)!)
+FileHandle.standardError.write(
+  (pressed.isEmpty ? "no import window for \(name) appeared\n" : "import window for \(name) did not close\n").data(using: .utf8)!)
 exit(1)
