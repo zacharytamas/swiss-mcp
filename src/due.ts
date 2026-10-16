@@ -57,18 +57,28 @@ const contracts = {
     }),
     Schema.Array(Titled),
   ),
-  startTimer: contract(
-    Schema.Struct({ op: Schema.Literal('timers.start'), ...ByName }),
-    Schema.Array(Timer),
-  ),
-  pauseTimer: contract(
-    Schema.Struct({ op: Schema.Literal('timers.pause'), ...ByName }),
-    Schema.Array(Timer),
-  ),
-  stopTimer: contract(
-    Schema.Struct({ op: Schema.Literal('timers.stop'), ...ByName }),
-    Schema.Array(Timer),
-  ),
+  // An unknown timer name makes Due open a picker that a background run can never answer, so these fail fast.
+  startTimer: {
+    ...contract(
+      Schema.Struct({ op: Schema.Literal('timers.start'), ...ByName }),
+      Schema.Array(Timer),
+    ),
+    timeout: '10 seconds',
+  },
+  pauseTimer: {
+    ...contract(
+      Schema.Struct({ op: Schema.Literal('timers.pause'), ...ByName }),
+      Schema.Array(Timer),
+    ),
+    timeout: '10 seconds',
+  },
+  stopTimer: {
+    ...contract(
+      Schema.Struct({ op: Schema.Literal('timers.stop'), ...ByName }),
+      Schema.Array(Timer),
+    ),
+    timeout: '10 seconds',
+  },
 } satisfies Record<
   string,
   ShortcutContract<
@@ -106,6 +116,8 @@ const dueTool = <
     .annotate(Tool.OpenWorld, false)
 
 const noMatch = 'an empty list means none matched'
+const unknownTimer =
+  'The name must match a Due timer exactly; an unknown name times out with ShortcutTimedOut after 10 seconds and nothing changes.'
 
 const reminders = <S extends Schema.Top>(items: S) =>
   Schema.Struct({ reminders: items })
@@ -143,21 +155,21 @@ export const DueToolkit = Toolkit.make(
   ),
   dueTool(
     'due_start_timer',
-    `Start the Due timer with this exact name. Returns the timers started; ${noMatch}.`,
+    `Start the Due timer with this exact name. ${unknownTimer}`,
     Schema.Struct(ByName),
     timers(contracts.startTimer.output),
     false,
   ),
   dueTool(
     'due_pause_timer',
-    `Pause the Due timer with this exact name. Returns the timers paused; ${noMatch}.`,
+    `Pause the Due timer with this exact name. ${unknownTimer}`,
     Schema.Struct(ByName),
     timers(contracts.pauseTimer.output),
     false,
   ),
   dueTool(
     'due_stop_timer',
-    `Stop the Due timer with this exact name. Returns the timers stopped; ${noMatch}.`,
+    `Stop the Due timer with this exact name. ${unknownTimer}`,
     Schema.Struct(ByName),
     timers(contracts.stopTimer.output),
     false,
