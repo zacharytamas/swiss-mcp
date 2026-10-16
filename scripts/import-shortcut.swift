@@ -36,8 +36,9 @@ func find(_ e: AXUIElement, role: String, text want: String, depth: Int = 0) -> 
   return nil
 }
 
-// Importing over an existing shortcut takes two presses: "Add Shortcut", then "Replace" in a follow-up prompt.
-// Keep pressing whichever appears until no import window for this name is left.
+// Importing over an existing shortcut shows a Replace / Keep Both / Cancel sheet inside the same import window, under
+// the same heading (measured on macOS 27.0). So every press stays within the window headed with this name: Replace
+// when the sheet is up, otherwise Add Shortcut. Other import windows are never touched.
 NSWorkspace.shared.open(URL(fileURLWithPath: path))
 let deadline = Date().addingTimeInterval(20)
 var pressed: [String] = []
@@ -46,18 +47,18 @@ while Date() < deadline {
   guard let shortcuts = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.shortcuts").first
   else { continue }
   let windows = attr(AXUIElementCreateApplication(shortcuts.processIdentifier), kAXWindowsAttribute) as? [AXUIElement] ?? []
-  // An editor window titled with the same name has neither button, so only import windows and their prompts match.
-  let buttons = windows.compactMap { window -> AXUIElement? in
-    guard find(window, role: "AXHeading", text: name) != nil || !pressed.isEmpty else { return nil }
-    return find(window, role: "AXButton", text: "Replace") ?? find(window, role: "AXButton", text: "Add Shortcut")
-  }
-  guard let button = buttons.first else {
+  // An editor window titled with the same name has neither button, so only this import window can match.
+  let ours = windows.first { find($0, role: "AXHeading", text: name) != nil
+    && (find($0, role: "AXButton", text: "Replace") ?? find($0, role: "AXButton", text: "Add Shortcut")) != nil }
+  guard let window = ours else {
     if !pressed.isEmpty {
       print("imported \(name) (pressed \(pressed.joined(separator: ", ")))")
       exit(0)
     }
     continue
   }
+  guard let button = find(window, role: "AXButton", text: "Replace") ?? find(window, role: "AXButton", text: "Add Shortcut")
+  else { continue }
   let label = text(button)
   guard AXUIElementPerformAction(button, kAXPressAction as CFString) == .success else { continue }
   pressed.append(label)
