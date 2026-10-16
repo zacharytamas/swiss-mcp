@@ -159,7 +159,10 @@ describe.each(['2025-06-18', '2025-11-25'])(
         '[]',
       )
 
-      expect(reply.error?.code).toBe(-32602)
+      // 2025-06-18 answers invalid arguments with JSON-RPC -32602; 2025-11-25 returns them as a tool error.
+      const message: string =
+        reply.error?.message ?? reply.result?.content?.[0]?.text ?? ''
+      expect(message).toContain('2026-02-30 09:00 does not exist')
       expect(await Bun.file(join(dir, 'last-input.json')).text()).toBe(
         'untouched',
       )
