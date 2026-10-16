@@ -1,4 +1,5 @@
 import {
+  Config,
   Context,
   Duration,
   Effect,
@@ -9,7 +10,6 @@ import {
 } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
-const SHORTCUTS = '/usr/bin/shortcuts'
 const OUTPUT_LIMIT = 4096
 
 export const ShortcutId = Schema.String.check(Schema.isUUID()).pipe(
@@ -78,12 +78,16 @@ export type ShortcutError =
 const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const fs = yield* FileSystem.FileSystem
+  // Overridable so the whole server can be exercised against a fake CLI on machines without Shortcuts.
+  const bin = yield* Config.String('SWISS_SHORTCUTS_BIN').pipe(
+    Config.withDefault('/usr/bin/shortcuts'),
+  )
 
   const exec = (args: ReadonlyArray<string>) =>
     Effect.scoped(
       Effect.gen(function* () {
         const handle = yield* spawner.spawn(
-          ChildProcess.make(SHORTCUTS, args, { stdin: 'ignore' }),
+          ChildProcess.make(bin, args, { stdin: 'ignore' }),
         )
         const [stdout, stderr, code] = yield* Effect.all(
           [

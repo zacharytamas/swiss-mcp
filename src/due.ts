@@ -98,65 +98,71 @@ const dueTool = <
 
 const noMatch = 'an empty list means none matched'
 
+const reminders = <S extends Schema.Top>(items: S) =>
+  Schema.Struct({ reminders: items })
+const timers = <S extends Schema.Top>(items: S) =>
+  Schema.Struct({ timers: items })
+
 export const DueToolkit = Toolkit.make(
   dueTool(
     'due_list_reminders',
     'List all reminders in the Due app with their due dates.',
     Tool.EmptyParams,
-    contracts.listReminders.output,
+    reminders(contracts.listReminders.output),
     true,
   ),
   dueTool(
     'due_create_reminder',
     'Create a one-time reminder in the Due app.',
     Schema.Struct(ByTitleAt),
-    contracts.createReminder.output,
+    reminders(contracts.createReminder.output),
     false,
   ),
   dueTool(
     'due_complete_reminder',
     `Mark every Due reminder whose title matches exactly as done. Returns the reminders marked done; ${noMatch}.`,
     Schema.Struct(ByTitle),
-    contracts.completeReminder.output,
+    reminders(contracts.completeReminder.output),
     false,
   ),
   dueTool(
     'due_reschedule_reminder',
     `Move every Due reminder whose title matches exactly to a new due date. Returns the reminders that moved; ${noMatch}.`,
     Schema.Struct(ByTitleAt),
-    contracts.rescheduleReminder.output,
+    reminders(contracts.rescheduleReminder.output),
     false,
   ),
   dueTool(
     'due_list_timers',
     'List all timers in the Due app.',
     Tool.EmptyParams,
-    contracts.listTimers.output,
+    timers(contracts.listTimers.output),
     true,
   ),
   dueTool(
     'due_start_timer',
     `Start the Due timer with this exact name. Returns the timers started; ${noMatch}.`,
     Schema.Struct(ByName),
-    contracts.startTimer.output,
+    timers(contracts.startTimer.output),
     false,
   ),
   dueTool(
     'due_pause_timer',
     `Pause the Due timer with this exact name. Returns the timers paused; ${noMatch}.`,
     Schema.Struct(ByName),
-    contracts.pauseTimer.output,
+    timers(contracts.pauseTimer.output),
     false,
   ),
   dueTool(
     'due_stop_timer',
     `Stop the Due timer with this exact name. Returns the timers stopped; ${noMatch}.`,
     Schema.Struct(ByName),
-    contracts.stopTimer.output,
+    timers(contracts.stopTimer.output),
     false,
   ),
 )
 
+// MCP's structuredContent must be a JSON object, so each list is returned under a named key.
 export const DueToolkitLive = DueToolkit.toLayer(
   Effect.gen(function* () {
     const shortcuts = yield* Shortcuts
@@ -168,43 +174,53 @@ export const DueToolkitLive = DueToolkit.toLayer(
     )
     return {
       due_list_reminders: () =>
-        toFailure(
-          shortcuts.run(contracts.listReminders, { op: 'reminders.list' }),
+        shortcuts.run(contracts.listReminders, { op: 'reminders.list' }).pipe(
+          Effect.map((reminders) => ({ reminders })),
+          toFailure,
         ),
       due_create_reminder: (p) =>
-        toFailure(
-          shortcuts.run(contracts.createReminder, {
-            op: 'reminders.create',
-            ...p,
-          }),
-        ),
+        shortcuts
+          .run(contracts.createReminder, { op: 'reminders.create', ...p })
+          .pipe(
+            Effect.map((reminders) => ({ reminders })),
+            toFailure,
+          ),
       due_complete_reminder: (p) =>
-        toFailure(
-          shortcuts.run(contracts.completeReminder, {
-            op: 'reminders.complete',
-            ...p,
-          }),
-        ),
+        shortcuts
+          .run(contracts.completeReminder, { op: 'reminders.complete', ...p })
+          .pipe(
+            Effect.map((reminders) => ({ reminders })),
+            toFailure,
+          ),
       due_reschedule_reminder: (p) =>
-        toFailure(
-          shortcuts.run(contracts.rescheduleReminder, {
+        shortcuts
+          .run(contracts.rescheduleReminder, {
             op: 'reminders.reschedule',
             ...p,
-          }),
-        ),
+          })
+          .pipe(
+            Effect.map((reminders) => ({ reminders })),
+            toFailure,
+          ),
       due_list_timers: () =>
-        toFailure(shortcuts.run(contracts.listTimers, { op: 'timers.list' })),
+        shortcuts.run(contracts.listTimers, { op: 'timers.list' }).pipe(
+          Effect.map((timers) => ({ timers })),
+          toFailure,
+        ),
       due_start_timer: (p) =>
-        toFailure(
-          shortcuts.run(contracts.startTimer, { op: 'timers.start', ...p }),
+        shortcuts.run(contracts.startTimer, { op: 'timers.start', ...p }).pipe(
+          Effect.map((timers) => ({ timers })),
+          toFailure,
         ),
       due_pause_timer: (p) =>
-        toFailure(
-          shortcuts.run(contracts.pauseTimer, { op: 'timers.pause', ...p }),
+        shortcuts.run(contracts.pauseTimer, { op: 'timers.pause', ...p }).pipe(
+          Effect.map((timers) => ({ timers })),
+          toFailure,
         ),
       due_stop_timer: (p) =>
-        toFailure(
-          shortcuts.run(contracts.stopTimer, { op: 'timers.stop', ...p }),
+        shortcuts.run(contracts.stopTimer, { op: 'timers.stop', ...p }).pipe(
+          Effect.map((timers) => ({ timers })),
+          toFailure,
         ),
     }
   }),
