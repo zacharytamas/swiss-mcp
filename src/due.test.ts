@@ -110,7 +110,12 @@ describe.each(['2025-06-18', '2025-11-25'])(
     })
 
     test('a reply in the wrong shape is a tool error naming ShortcutOutputInvalid', async () => {
-      const reply = await callTool(version, 'due_list_timers', {}, 'not json {')
+      const reply = await callTool(
+        version,
+        'due_stop_timer',
+        { name: 'Laundry' },
+        'not json {',
+      )
 
       expect(reply.result.isError).toBe(true)
       expect(JSON.parse(reply.result.content[0].text).error).toBe(

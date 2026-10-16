@@ -71,14 +71,26 @@ const due = (intent: string, params: Record<string, unknown>) =>
     ...params,
   } as never)
 
-const findAll = (entity: string) =>
-  due(entity, {
+// Due's reminder Find returns nothing without a condition (measured on Due 26.4.4), so "every reminder" is
+// "title does not contain" a string no title has. `matching` narrows to titles containing the given text.
+const findReminders = (matching?: TokenString) =>
+  due('ReminderEntity', {
     WFContentItemFilter: {
       WFSerializationType: 'WFContentPredicateTableTemplate',
       Value: {
         WFActionParameterFilterPrefix: 1,
         WFContentPredicateBoundedDate: false,
-        WFActionParameterFilterTemplates: [],
+        WFActionParameterFilterTemplates: [
+          {
+            Property: 'Title',
+            Operator: matching ? 99 : 999,
+            Removable: true,
+            Values: {
+              Unit: 4,
+              String: matching ?? text('\u0000swiss-none\u0000'),
+            },
+          },
+        ],
       },
     },
     WFContentItemLimitEnabled: false,
@@ -158,9 +170,7 @@ const op = (name: string, body: () => void) =>
 
 op('reminders.list', () =>
   respond(
-    forEach(output(findAll('ReminderEntity'), 'Reminders'), () =>
-      reminder(repeatItem),
-    ),
+    forEach(output(findReminders(), 'Reminders'), () => reminder(repeatItem)),
   ),
 )
 
@@ -195,7 +205,7 @@ for (const [name, act] of [
 ] as const) {
   op(name, () =>
     respond(
-      forEach(output(findAll('ReminderEntity'), 'Reminders'), () =>
+      forEach(output(findReminders(text(field('title'))), 'Reminders'), () =>
         when(
           property(repeatItem, 'title'),
           text(field('title')),
@@ -210,34 +220,25 @@ for (const [name, act] of [
   )
 }
 
-op('timers.list', () =>
-  respond(
-    forEach(output(findAll('TimerEntity'), 'Timers'), () =>
-      record({ name: text(asText(repeatItem)) }),
-    ),
-  ),
-)
-
+// Due has no usable Find for timers (the action is missing in Shortcuts), so timers are named directly and Due
+// resolves the name itself.
 for (const [name, intent] of [
   ['timers.start', 'StartTimerIntent'],
   ['timers.pause', 'PauseTimerIntent'],
   ['timers.stop', 'StopTimerIntent'],
 ] as const) {
-  op(name, () =>
+  op(name, () => {
+    const timer = due(intent, {
+      timer: text(field('name')),
+      syncWhenRun: false,
+    })
     respond(
-      forEach(output(findAll('TimerEntity'), 'Timers'), () =>
-        when(
-          asText(repeatItem),
-          text(field('name')),
-          () => {
-            due(intent, { timer: repeatItem, syncWhenRun: false })
-            record({ name: text(asText(repeatItem)) })
-          },
-          'nothing',
-        ),
+      output(
+        record({ name: text(asText(output(timer, 'Timer'))) }),
+        'Dictionary',
       ),
-    ),
-  )
+    )
+  })
 }
 
 await mkdir('dist', { recursive: true })

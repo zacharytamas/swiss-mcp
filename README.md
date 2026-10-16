@@ -10,7 +10,6 @@ An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Eff
 | `due_create_reminder` | Create a one-time reminder (`title`, ISO 8601 `dueDate`) |
 | `due_complete_reminder` | Mark reminders with this exact `title` done |
 | `due_reschedule_reminder` | Move reminders with this exact `title` to a new `dueDate` |
-| `due_list_timers` | List Due timers |
 | `due_start_timer` / `due_pause_timer` / `due_stop_timer` | Act on the timer with this exact `name` |
 
 ## How it talks to apps
@@ -42,7 +41,7 @@ bun run check   # Biome lint/format check + typecheck
 bun run fix     # apply Biome fixes
 bun test
 bun scripts/mcp-call.ts                       # list tools as an MCP client sees them
-bun scripts/mcp-call.ts due_list_timers '{}'  # call one tool
+bun scripts/mcp-call.ts due_list_reminders '{}'  # call one tool
 ```
 
 ## Using it from an MCP client
