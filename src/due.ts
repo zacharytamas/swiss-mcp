@@ -9,10 +9,30 @@ const Reminder = Schema.Struct({ title: Schema.String, dueDate: Schema.String })
 const Titled = Schema.Struct({ title: Schema.String })
 const Timer = Schema.Struct({ name: Schema.String })
 const Name = Schema.String.check(Schema.isNonEmpty())
+// JS Date silently rolls impossible dates forward ("2026-02-30" becomes March 2), so the written date and time must
+// survive a parse: the same instant, read back in the string's own offset, has to show the same fields.
+const isRealDateTime = Schema.makeFilter<string>((s) => {
+  const [, date, time, offset] =
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})[^Z+-]*(Z|[+-]\d{2}:\d{2})$/.exec(s) ??
+    []
+  const ms = Date.parse(s)
+  if (!date || !time || !offset || Number.isNaN(ms))
+    return 'is not a valid date and time'
+  const shift =
+    offset === 'Z'
+      ? 0
+      : (offset[0] === '-' ? -1 : 1) *
+        (Number(offset.slice(1, 3)) * 60 + Number(offset.slice(4)))
+  const local = new Date(ms + shift * 60_000).toISOString()
+  return local.slice(0, 10) === date && local.slice(11, 16) === time
+    ? undefined
+    : `${date} ${time} does not exist`
+})
 const IsoDateTime = Schema.String.check(
   Schema.isPattern(
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/,
   ),
+  isRealDateTime,
 ).annotate({
   description:
     'ISO 8601 date-time with an offset, e.g. 2026-10-16T09:30:00-07:00',
