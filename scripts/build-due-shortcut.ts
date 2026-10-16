@@ -84,7 +84,13 @@ const findAll = (entity: string) =>
     WFContentItemLimitEnabled: false,
   })
 
-const when = (value: Ref, equals: TokenString, body: () => void) => {
+// `otherwise: 'nothing'` stops an unmatched loop item leaking into Repeat Results, since If passes its input through.
+const when = (
+  value: Ref,
+  equals: TokenString,
+  body: () => void,
+  otherwise?: 'nothing',
+) => {
   const gid = crypto.randomUUID().toUpperCase()
   s.action('is.workflow.actions.conditional', {
     GroupingIdentifier: gid,
@@ -94,6 +100,10 @@ const when = (value: Ref, equals: TokenString, body: () => void) => {
     WFConditionalActionString: equals,
   })
   body()
+  if (otherwise) {
+    s.otherwise(gid)
+    s.action('is.workflow.actions.nothing', {})
+  }
   s.endIf(gid)
 }
 
@@ -186,10 +196,15 @@ for (const [name, act] of [
   op(name, () =>
     respond(
       forEach(output(findAll('ReminderEntity'), 'Reminders'), () =>
-        when(property(repeatItem, 'title'), text(field('title')), () => {
-          act(repeatItem)
-          record({ title: text(property(repeatItem, 'title')) })
-        }),
+        when(
+          property(repeatItem, 'title'),
+          text(field('title')),
+          () => {
+            act(repeatItem)
+            record({ title: text(property(repeatItem, 'title')) })
+          },
+          'nothing',
+        ),
       ),
     ),
   )
@@ -211,10 +226,15 @@ for (const [name, intent] of [
   op(name, () =>
     respond(
       forEach(output(findAll('TimerEntity'), 'Timers'), () =>
-        when(asText(repeatItem), text(field('name')), () => {
-          due(intent, { timer: repeatItem, syncWhenRun: false })
-          record({ name: text(asText(repeatItem)) })
-        }),
+        when(
+          asText(repeatItem),
+          text(field('name')),
+          () => {
+            due(intent, { timer: repeatItem, syncWhenRun: false })
+            record({ name: text(asText(repeatItem)) })
+          },
+          'nothing',
+        ),
       ),
     ),
   )

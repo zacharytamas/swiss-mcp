@@ -104,12 +104,15 @@ const call = (input: unknown, c: typeof contract = contract) =>
   )
 
 describe('parseListing', () => {
-  test('keeps parentheses inside names and skips lines without an id', () => {
-    expect<Record<string, string>>(
+  test('keeps parentheses inside names, groups duplicates, and skips lines without an id', () => {
+    const other = '11111111-1111-4111-8111-111111111111'
+    expect<Record<string, ReadonlyArray<string>>>(
       Object.fromEntries(
-        parseListing(`Stop (Driving) Task (${ID})\nnot a shortcut line\n\n`),
+        parseListing(
+          `Stop (Driving) Task (${ID})\nnot a shortcut line\nswiss-due (${ID})\nswiss-due (${other})\n`,
+        ),
       ),
-    ).toEqual({ 'Stop (Driving) Task': ID })
+    ).toEqual({ 'Stop (Driving) Task': [ID], 'swiss-due': [ID, other] })
   })
 })
 
@@ -150,6 +153,26 @@ describe('Shortcuts.run', () => {
         inputJson: '{"greeting":"Zoë 🎉","count":2}',
       },
     ])
+  })
+
+  test('refuses to guess when two shortcuts share the name', async () => {
+    const cli = fakeCli(
+      () => ({ stdout: '[]', stderr: '', code: 0 }),
+      `swiss-json (${ID})\nswiss-json (11111111-1111-4111-8111-111111111111)\n`,
+    )
+
+    const exit = await runWith(cli.layer, call({ greeting: 'hi', count: 1 }))
+
+    expect(failureOf(exit)).toEqual(
+      new ShortcutFailed({
+        shortcut: 'swiss-json',
+        exitCode: -1,
+        stderr: '',
+        message:
+          '2 shortcuts are named "swiss-json"; delete the extras in Shortcuts so the right one runs.',
+      }),
+    )
+    expect(cli.spawned.map(({ args }) => args[0])).toEqual(['list'])
   })
 
   test('rejects an unknown input key before touching the CLI', async () => {
@@ -211,7 +234,8 @@ describe('Shortcuts.run', () => {
       new ShortcutOutputInvalid({
         shortcut: 'swiss-json',
         output: 'not json {',
-        message: 'swiss-json output is invalid: Expected a valid JSON string',
+        message:
+          'swiss-json ran, but its output is invalid, so any changes it makes have already happened: Expected a valid JSON string',
       }),
     )
   })
