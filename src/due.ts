@@ -9,45 +9,36 @@ const Reminder = Schema.Struct({ title: Schema.String, dueDate: Schema.String })
 const Titled = Schema.Struct({ title: Schema.String })
 const Timer = Schema.Struct({ name: Schema.String })
 const Name = Schema.String.check(Schema.isNonEmpty())
-// JS Date silently rolls impossible dates forward ("2026-02-30" becomes March 2), so the written date and time must
-// survive a parse: the same instant, read back in the string's own offset, has to show the same fields.
-const isRealDateTime = Schema.makeFilter<string>((s) => {
-  const [, date, time, offset] =
-    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})[^Z+-]*(Z|[+-]\d{2}:\d{2})$/.exec(s) ??
-    []
-  const ms = Date.parse(s)
-  if (!date || !time || !offset || Number.isNaN(ms))
-    return 'is not a valid date and time'
-  const shift =
-    offset === 'Z'
-      ? 0
-      : (offset[0] === '-' ? -1 : 1) *
-        (Number(offset.slice(1, 3)) * 60 + Number(offset.slice(4)))
-  const local = new Date(ms + shift * 60_000).toISOString()
-  if (local.slice(0, 10) !== date || local.slice(11, 16) !== time)
-    return `${date} ${time} does not exist`
-  // Due stores times to the minute, so anything finer would be scheduled earlier than asked.
-  return ms % 60_000 === 0
-    ? undefined
-    : 'must be on a whole minute; Due schedules to the minute'
-})
-const IsoDateTime = Schema.String.check(
-  Schema.isPattern(
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/,
-  ),
-  isRealDateTime,
-).annotate({
-  description:
-    'ISO 8601 date-time with an offset, on a whole minute, e.g. 2026-10-16T09:30:00-07:00',
-})
-
-const LocalWallClock = Schema.String.check(
-  Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/),
+// Due stores a reminder's time as local wall-clock time to the minute, in this Mac's time zone (measured on Due
+// 26.4.4), so tools take exactly that and pass it through. The only check needed is that the date exists: JS Date
+// would roll "2026-02-30" forward to March 2, so the written fields must read back unchanged.
+// This Effect version publishes neither `pattern` nor checks after a custom filter in the tool's JSON Schema, so
+// the description is what tells an MCP client the format; it is attached before the date-exists filter.
+const LocalDateTime = Schema.String.check(
+  Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/, {
+    message: 'must be YYYY-MM-DD HH:mm in local time',
+  }),
 )
+  .annotate({
+    description:
+      'Local date and time on this Mac, to the minute, as YYYY-MM-DD HH:mm (e.g. 2026-10-17 09:30). Due resolves the hour that repeats when clocks fall back the same way its own app does.',
+  })
+  .check(
+    Schema.makeFilter<string>((s) => {
+      const [y, mo, d, h, mi] = s.split(/[- :]/).map(Number)
+      const back = new Date(Date.UTC(y ?? 0, (mo ?? 1) - 1, d, h, mi))
+      return back.getUTCFullYear() === y &&
+        back.getUTCMonth() + 1 === mo &&
+        back.getUTCDate() === d &&
+        back.getUTCHours() === h &&
+        back.getUTCMinutes() === mi
+        ? undefined
+        : `${s} does not exist`
+    }),
+  )
 
 const ByTitle = { title: Name }
-const ByTitleAt = { title: Name, dueDate: IsoDateTime }
-const ByTitleAtLocal = { title: Name, dueDate: LocalWallClock }
+const ByTitleAt = { title: Name, dueDate: LocalDateTime }
 const ByName = { name: Name }
 
 const contract = <I extends Schema.Top, O extends Schema.Top>(
@@ -70,7 +61,7 @@ const contracts = {
   createReminder: contract(
     Schema.Struct({
       op: Schema.Literal('reminders.create'),
-      ...ByTitleAtLocal,
+      ...ByTitleAt,
     }),
     Schema.Array(Reminder),
   ),
@@ -81,7 +72,7 @@ const contracts = {
   rescheduleReminder: viaFind(
     Schema.Struct({
       op: Schema.Literal('reminders.reschedule'),
-      ...ByTitleAtLocal,
+      ...ByTitleAt,
     }),
     Schema.Array(Titled),
   ),
@@ -204,14 +195,6 @@ export const DueToolkit = Toolkit.make(
   ),
 )
 
-// Due reads a date's time only from local wall-clock text; an ISO string with an offset loses the time and lands
-// at noon (measured on Due 26.4.4). Dates cross the boundary as `YYYY-MM-DD HH:mm` in this machine's time zone.
-const localWallClock = (iso: string) => {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
 // MCP's structuredContent must be a JSON object, so each list is returned under a named key.
 export const DueToolkitLive = DueToolkit.toLayer(
   Effect.gen(function* () {
@@ -230,11 +213,7 @@ export const DueToolkitLive = DueToolkit.toLayer(
         ),
       due_create_reminder: (p) =>
         shortcuts
-          .run(contracts.createReminder, {
-            op: 'reminders.create',
-            title: p.title,
-            dueDate: localWallClock(p.dueDate),
-          })
+          .run(contracts.createReminder, { op: 'reminders.create', ...p })
           .pipe(
             Effect.map((reminders) => ({ reminders })),
             toFailure,
@@ -250,8 +229,7 @@ export const DueToolkitLive = DueToolkit.toLayer(
         shortcuts
           .run(contracts.rescheduleReminder, {
             op: 'reminders.reschedule',
-            title: p.title,
-            dueDate: localWallClock(p.dueDate),
+            ...p,
           })
           .pipe(
             Effect.map((reminders) => ({ reminders })),

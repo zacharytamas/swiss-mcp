@@ -22,11 +22,12 @@ cat "${dir}/reply"
 })
 afterAll(() => rm(dir, { recursive: true, force: true }))
 
-const callTool = async (
+// Starts src/main.ts against the fake CLI, initializes, sends one request as id 2, and returns its reply.
+const request = async (
   protocolVersion: string,
-  name: string,
-  args: object,
-  reply: string,
+  method: string,
+  params: object,
+  reply = '[]',
 ) => {
   await Bun.write(join(dir, 'reply'), reply)
   const server = Bun.spawn(['bun', 'src/main.ts'], {
@@ -51,12 +52,7 @@ const callTool = async (
       },
     },
     { jsonrpc: '2.0', method: 'notifications/initialized' },
-    {
-      jsonrpc: '2.0',
-      id: 2,
-      method: 'tools/call',
-      params: { name, arguments: args },
-    },
+    { jsonrpc: '2.0', id: 2, method, params },
   ]) {
     server.stdin.write(`${JSON.stringify(message)}\n`)
   }
@@ -75,8 +71,15 @@ const callTool = async (
       return found
     }
   }
-  throw new Error('server exited without answering tools/call')
+  throw new Error(`server exited without answering ${method}`)
 }
+
+const callTool = (
+  protocolVersion: string,
+  name: string,
+  args: object,
+  reply: string,
+) => request(protocolVersion, 'tools/call', { name, arguments: args }, reply)
 
 describe.each(['2025-06-18', '2025-11-25'])(
   'Due tools over MCP %s',
@@ -98,11 +101,11 @@ describe.each(['2025-06-18', '2025-11-25'])(
       })
     })
 
-    test('a mutation sends the op, and the date as local wall-clock time, to the swiss-due shortcut', async () => {
+    test('a mutation passes the local wall-clock date straight to the swiss-due shortcut', async () => {
       await callTool(
         version,
         'due_reschedule_reminder',
-        { title: 'Pay rent', dueDate: '2026-11-02T14:30:00Z' },
+        { title: 'Pay rent', dueDate: '2026-11-02 09:30' },
         '[{"title":"Pay rent"}]',
       )
 
@@ -131,12 +134,12 @@ describe.each(['2025-06-18', '2025-11-25'])(
       ['due_complete_reminder', { title: 'Nope' }, false],
       [
         'due_reschedule_reminder',
-        { title: 'Nope', dueDate: '2026-11-02T14:30:00Z' },
+        { title: 'Nope', dueDate: '2026-11-02 09:30' },
         false,
       ],
       [
         'due_create_reminder',
-        { title: 'New', dueDate: '2026-11-02T14:30:00Z' },
+        { title: 'New', dueDate: '2026-11-02 09:30' },
         true,
       ],
       ['due_start_timer', { name: 'Task' }, true],
@@ -149,55 +152,62 @@ describe.each(['2025-06-18', '2025-11-25'])(
       },
     )
 
-    test('rejects a time with seconds, which Due would round down to the minute', async () => {
+    test.each([
+      ['2026-02-30 09:00', 'does not exist'],
+      ['2027-02-29 09:00', 'does not exist'],
+      ['2026-11-02 24:00', 'does not exist'],
+      ['2026-11-02T14:30:00Z', 'YYYY-MM-DD HH:mm'],
+      ['2026-11-02 09:30:45', 'YYYY-MM-DD HH:mm'],
+    ])('rejects %s before the shortcut runs', async (dueDate, expected) => {
       await Bun.write(join(dir, 'last-input.json'), 'untouched')
 
       const reply = await callTool(
         version,
         'due_create_reminder',
-        { title: 'Pay rent', dueDate: '2026-11-02T14:30:45.500Z' },
-        '[]',
-      )
-
-      const message: string =
-        reply.error?.message ?? reply.result?.content?.[0]?.text ?? ''
-      expect(message).toContain('Due schedules to the minute')
-      expect(await Bun.file(join(dir, 'last-input.json')).text()).toBe(
-        'untouched',
-      )
-    })
-
-    test('rejects a date that does not exist instead of rolling it into the next month', async () => {
-      await Bun.write(join(dir, 'last-input.json'), 'untouched')
-
-      const reply = await callTool(
-        version,
-        'due_create_reminder',
-        { title: 'Pay rent', dueDate: '2026-02-30T09:00Z' },
+        { title: 'Pay rent', dueDate },
         '[]',
       )
 
       // 2025-06-18 answers invalid arguments with JSON-RPC -32602; 2025-11-25 returns them as a tool error.
       const message: string =
         reply.error?.message ?? reply.result?.content?.[0]?.text ?? ''
-      expect(message).toContain('2026-02-30 09:00 does not exist')
+      expect(message).toContain(expected)
       expect(await Bun.file(join(dir, 'last-input.json')).text()).toBe(
         'untouched',
       )
     })
 
-    test('accepts an ISO date with fractional seconds, as Date.toISOString() writes it', async () => {
+    test('tools/list tells clients the local YYYY-MM-DD HH:mm date format', async () => {
+      const reply = await request(version, 'tools/list', {})
+      const tools: Array<{
+        name: string
+        inputSchema: { properties?: Record<string, { description?: string }> }
+      }> = reply.result.tools
+
+      expect(
+        tools
+          .filter((t) => t.inputSchema.properties?.dueDate)
+          .map((t) => [
+            t.name,
+            t.inputSchema.properties?.dueDate?.description?.includes(
+              'YYYY-MM-DD HH:mm',
+            ),
+          ]),
+      ).toEqual([
+        ['due_create_reminder', true],
+        ['due_reschedule_reminder', true],
+      ])
+    })
+
+    test('accepts a leap day', async () => {
       const reply = await callTool(
         version,
         'due_create_reminder',
-        { title: 'Pay rent', dueDate: '2026-11-02T14:30:00.000Z' },
-        '[{"title":"Pay rent","dueDate":"2026-11-02T09:30:00-05:00"}]',
+        { title: 'Leap', dueDate: '2028-02-29 09:00' },
+        '[{"title":"Leap","dueDate":"2028-02-29T09:00:00-05:00"}]',
       )
 
       expect(reply.result.isError).toBe(false)
-      expect(
-        (await Bun.file(join(dir, 'last-input.json')).json()).dueDate,
-      ).toBe('2026-11-02 09:30')
     })
   },
 )
