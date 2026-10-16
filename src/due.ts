@@ -44,10 +44,6 @@ const contracts = {
     Schema.Struct({ op: Schema.Literal('reminders.reschedule'), ...ByTitleAt }),
     Schema.Array(Titled),
   ),
-  listTimers: contract(
-    Schema.Struct({ op: Schema.Literal('timers.list') }),
-    Schema.Array(Timer),
-  ),
   startTimer: contract(
     Schema.Struct({ op: Schema.Literal('timers.start'), ...ByName }),
     Schema.Array(Timer),
@@ -133,13 +129,6 @@ export const DueToolkit = Toolkit.make(
     false,
   ),
   dueTool(
-    'due_list_timers',
-    'List all timers in the Due app.',
-    Tool.EmptyParams,
-    timers(contracts.listTimers.output),
-    true,
-  ),
-  dueTool(
     'due_start_timer',
     `Start the Due timer with this exact name. Returns the timers started; ${noMatch}.`,
     Schema.Struct(ByName),
@@ -202,11 +191,6 @@ export const DueToolkitLive = DueToolkit.toLayer(
             Effect.map((reminders) => ({ reminders })),
             toFailure,
           ),
-      due_list_timers: () =>
-        shortcuts.run(contracts.listTimers, { op: 'timers.list' }).pipe(
-          Effect.map((timers) => ({ timers })),
-          toFailure,
-        ),
       due_start_timer: (p) =>
         shortcuts.run(contracts.startTimer, { op: 'timers.start', ...p }).pipe(
           Effect.map((timers) => ({ timers })),

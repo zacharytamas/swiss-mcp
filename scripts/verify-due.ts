@@ -63,11 +63,6 @@ await check('due_list_reminders', {}, (items) =>
     ? undefined
     : 'items missing title or dueDate',
 )
-await check('due_list_timers', {}, (items) =>
-  items.every((i) => typeof i.name === 'string')
-    ? undefined
-    : 'items missing name',
-)
 
 if (write) {
   await check(
