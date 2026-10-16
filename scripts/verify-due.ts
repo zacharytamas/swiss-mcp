@@ -27,9 +27,10 @@ const call = async (tool: string, args: object) => {
       problem: JSON.stringify(result?.content?.[0]?.text ?? reply.error),
     }
   }
+  const content = result.structuredContent ?? {}
   return {
     ms,
-    items: result.structuredContent as ReadonlyArray<Item>,
+    items: (content.reminders ?? content.timers) as ReadonlyArray<Item>,
     problem: undefined,
   }
 }
