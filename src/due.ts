@@ -24,9 +24,12 @@ const isRealDateTime = Schema.makeFilter<string>((s) => {
       : (offset[0] === '-' ? -1 : 1) *
         (Number(offset.slice(1, 3)) * 60 + Number(offset.slice(4)))
   const local = new Date(ms + shift * 60_000).toISOString()
-  return local.slice(0, 10) === date && local.slice(11, 16) === time
+  if (local.slice(0, 10) !== date || local.slice(11, 16) !== time)
+    return `${date} ${time} does not exist`
+  // Due stores times to the minute, so anything finer would be scheduled earlier than asked.
+  return ms % 60_000 === 0
     ? undefined
-    : `${date} ${time} does not exist`
+    : 'must be on a whole minute; Due schedules to the minute'
 })
 const IsoDateTime = Schema.String.check(
   Schema.isPattern(
@@ -35,7 +38,7 @@ const IsoDateTime = Schema.String.check(
   isRealDateTime,
 ).annotate({
   description:
-    'ISO 8601 date-time with an offset, e.g. 2026-10-16T09:30:00-07:00',
+    'ISO 8601 date-time with an offset, on a whole minute, e.g. 2026-10-16T09:30:00-07:00',
 })
 
 const LocalWallClock = Schema.String.check(

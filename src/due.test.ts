@@ -149,6 +149,24 @@ describe.each(['2025-06-18', '2025-11-25'])(
       },
     )
 
+    test('rejects a time with seconds, which Due would round down to the minute', async () => {
+      await Bun.write(join(dir, 'last-input.json'), 'untouched')
+
+      const reply = await callTool(
+        version,
+        'due_create_reminder',
+        { title: 'Pay rent', dueDate: '2026-11-02T14:30:45.500Z' },
+        '[]',
+      )
+
+      const message: string =
+        reply.error?.message ?? reply.result?.content?.[0]?.text ?? ''
+      expect(message).toContain('Due schedules to the minute')
+      expect(await Bun.file(join(dir, 'last-input.json')).text()).toBe(
+        'untouched',
+      )
+    })
+
     test('rejects a date that does not exist instead of rolling it into the next month', async () => {
       await Bun.write(join(dir, 'last-input.json'), 'untouched')
 
