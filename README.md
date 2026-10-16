@@ -7,7 +7,7 @@ An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Eff
 | Tool | What it does |
 |---|---|
 | `due_list_reminders` | List Due reminders with their due dates |
-| `due_create_reminder` | Create a one-time reminder (`title`, ISO 8601 `dueDate`) |
+| `due_create_reminder` | Create a one-time reminder (`title`, `dueDate` as local `YYYY-MM-DD HH:mm`) |
 | `due_complete_reminder` | Mark reminders with this exact `title` done |
 | `due_reschedule_reminder` | Move reminders with this exact `title` to a new `dueDate` |
 | `due_start_timer` / `due_pause_timer` / `due_stop_timer` | Act on the timer with this exact `name` |
@@ -26,7 +26,7 @@ swift scripts/import-shortcut.swift dist/swiss-due.shortcut   # presses "Add Sho
 
 Shortcuts only imports through its "Add Shortcut" window. `import-shortcut.swift` presses the button for you if your terminal has Accessibility permission (System Settings → Privacy & Security → Accessibility); otherwise `open dist/swiss-due.shortcut` and click it. The screen must be unlocked.
 
-The first run asks to allow `swiss-due` to use Due, and background runs stall until it's answered. Start a run and, while it waits, `swift scripts/allow-shortcut.swift swiss-due` presses Allow for that one shortcut. A rebuilt shortcut that imports as a new shortcut asks again.
+Shortcuts asks permission the first time `swiss-due` hands data to each Due action (create, edit, mark done, and so on), and background runs stall until it's answered. Start a run and, while it waits, `swift scripts/allow-shortcut.swift swiss-due` presses Always Allow for that one shortcut. A rebuilt shortcut that imports as a new shortcut asks again.
 
 Check it end to end:
 
@@ -35,7 +35,7 @@ bun scripts/verify-due.ts           # read-only: list reminders
 bun scripts/verify-due.ts --write   # also creates, reschedules and completes a throwaway reminder
 ```
 
-Known limits, measured on Due 26.4.4: reminders whose title has no letter, digit or space aren't listed; there's no way to list timers; an unknown timer name times out after 10 seconds.
+Known limits, measured on Due 26.4.4: dates are this Mac's local wall-clock time, to the minute, because that is what Due stores; reminders whose title has no letter, digit or space aren't listed; there's no way to list timers; an unknown timer name times out after 10 seconds.
 
 ## Development
 

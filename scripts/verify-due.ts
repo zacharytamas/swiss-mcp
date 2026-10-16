@@ -8,8 +8,16 @@ const timerFlag = Bun.argv.indexOf('--timer')
 const timer = timerFlag >= 0 ? Bun.argv[timerFlag + 1] : undefined
 
 const title = `swiss-mcp check ${new Date().toISOString().slice(0, 16)}`
-const iso = (ms: number) =>
-  new Date(Date.now() + ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
+const pad = (n: number) => String(n).padStart(2, '0')
+// Local wall-clock minutes from now, in the format the tools take.
+const inMinutes = (minutes: number) => {
+  const d = new Date(Date.now() + minutes * 60_000)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+// Due reports dates back as ISO with an offset; the local date and minute are its first 16 characters.
+const sameMinute = (reported: unknown, local: string) =>
+  typeof reported === 'string' &&
+  reported.slice(0, 16) === local.replace(' ', 'T')
 
 const call = async (tool: string, args: object) => {
   const started = performance.now()
@@ -65,21 +73,36 @@ await check('due_list_reminders', {}, (items) =>
 )
 
 if (write) {
+  const created = inMinutes(60)
+  const moved = inMinutes(120)
   await check(
     'due_create_reminder',
-    { title, dueDate: iso(3_600_000) },
-    one('title', title),
+    { title, dueDate: created },
+    (items) =>
+      one('title', title)(items) ??
+      (sameMinute(items[0]?.dueDate, created)
+        ? undefined
+        : `created with dueDate ${String(items[0]?.dueDate)}, not ${created}`),
   )
-  await check('due_list_reminders', {}, (items) =>
-    items.some((i) => i.title === title)
+  await check('due_list_reminders', {}, (items) => {
+    const found = items.find((i) => i.title === title)
+    if (!found) return 'created reminder not listed'
+    return sameMinute(found.dueDate, created)
       ? undefined
-      : 'created reminder not listed',
-  )
+      : `listed with dueDate ${String(found.dueDate)}, not ${created}`
+  })
   await check(
     'due_reschedule_reminder',
-    { title, dueDate: iso(7_200_000) },
+    { title, dueDate: moved },
     one('title', title),
   )
+  await check('due_list_reminders', {}, (items) => {
+    const found = items.find((i) => i.title === title)
+    if (!found) return 'rescheduled reminder not listed'
+    return sameMinute(found.dueDate, moved)
+      ? undefined
+      : `still due ${String(found.dueDate)}, not ${moved}`
+  })
   await check('due_complete_reminder', { title }, one('title', title))
   await check('due_list_reminders', {}, (items) =>
     items.some((i) => i.title === title)
