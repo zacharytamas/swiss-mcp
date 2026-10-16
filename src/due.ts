@@ -18,14 +18,21 @@ const IsoDateTime = Schema.String.check(
     'ISO 8601 date-time with an offset, e.g. 2026-10-16T09:30:00-07:00',
 })
 
+const LocalWallClock = Schema.String.check(
+  Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/),
+)
+
 const ByTitle = { title: Name }
 const ByTitleAt = { title: Name, dueDate: IsoDateTime }
+const ByTitleAtLocal = { title: Name, dueDate: LocalWallClock }
 const ByName = { name: Name }
 
+// A Find with no matches ends swiss-due before its output step, so Shortcuts prints nothing (measured on Due
+// 26.4.4). Every Due op answers with a list, so nothing means an empty one.
 const contract = <I extends Schema.Top, O extends Schema.Top>(
   input: I,
   output: O,
-) => ({ name: SHORTCUT, input, output })
+) => ({ name: SHORTCUT, input, output, whenEmpty: '[]' })
 
 const contracts = {
   listReminders: contract(
@@ -33,7 +40,10 @@ const contracts = {
     Schema.Array(Reminder),
   ),
   createReminder: contract(
-    Schema.Struct({ op: Schema.Literal('reminders.create'), ...ByTitleAt }),
+    Schema.Struct({
+      op: Schema.Literal('reminders.create'),
+      ...ByTitleAtLocal,
+    }),
     Schema.Array(Reminder),
   ),
   completeReminder: contract(
@@ -41,7 +51,10 @@ const contracts = {
     Schema.Array(Titled),
   ),
   rescheduleReminder: contract(
-    Schema.Struct({ op: Schema.Literal('reminders.reschedule'), ...ByTitleAt }),
+    Schema.Struct({
+      op: Schema.Literal('reminders.reschedule'),
+      ...ByTitleAtLocal,
+    }),
     Schema.Array(Titled),
   ),
   startTimer: contract(
@@ -151,6 +164,14 @@ export const DueToolkit = Toolkit.make(
   ),
 )
 
+// Due reads a date's time only from local wall-clock text; an ISO string with an offset loses the time and lands
+// at noon (measured on Due 26.4.4). Dates cross the boundary as `YYYY-MM-DD HH:mm` in this machine's time zone.
+const localWallClock = (iso: string) => {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 // MCP's structuredContent must be a JSON object, so each list is returned under a named key.
 export const DueToolkitLive = DueToolkit.toLayer(
   Effect.gen(function* () {
@@ -169,7 +190,11 @@ export const DueToolkitLive = DueToolkit.toLayer(
         ),
       due_create_reminder: (p) =>
         shortcuts
-          .run(contracts.createReminder, { op: 'reminders.create', ...p })
+          .run(contracts.createReminder, {
+            op: 'reminders.create',
+            title: p.title,
+            dueDate: localWallClock(p.dueDate),
+          })
           .pipe(
             Effect.map((reminders) => ({ reminders })),
             toFailure,
@@ -185,7 +210,8 @@ export const DueToolkitLive = DueToolkit.toLayer(
         shortcuts
           .run(contracts.rescheduleReminder, {
             op: 'reminders.reschedule',
-            ...p,
+            title: p.title,
+            dueDate: localWallClock(p.dueDate),
           })
           .pipe(
             Effect.map((reminders) => ({ reminders })),

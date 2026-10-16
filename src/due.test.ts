@@ -33,7 +33,11 @@ const callTool = async (
     stdin: 'pipe',
     stdout: 'pipe',
     stderr: 'inherit',
-    env: { ...process.env, SWISS_SHORTCUTS_BIN: join(dir, 'shortcuts') },
+    env: {
+      ...process.env,
+      SWISS_SHORTCUTS_BIN: join(dir, 'shortcuts'),
+      TZ: 'America/New_York',
+    },
   })
   for (const message of [
     {
@@ -94,18 +98,18 @@ describe.each(['2025-06-18', '2025-11-25'])(
       })
     })
 
-    test('a mutation sends the op and arguments the swiss-due shortcut reads', async () => {
+    test('a mutation sends the op, and the date as local wall-clock time, to the swiss-due shortcut', async () => {
       await callTool(
         version,
         'due_reschedule_reminder',
-        { title: 'Pay rent', dueDate: '2026-11-02T09:00:00Z' },
+        { title: 'Pay rent', dueDate: '2026-11-02T14:30:00Z' },
         '[{"title":"Pay rent"}]',
       )
 
       expect(await Bun.file(join(dir, 'last-input.json')).json()).toEqual({
         op: 'reminders.reschedule',
         title: 'Pay rent',
-        dueDate: '2026-11-02T09:00:00Z',
+        dueDate: '2026-11-02 09:30',
       })
     })
 
