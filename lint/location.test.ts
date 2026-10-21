@@ -37,7 +37,12 @@ const flagged = (file: string) => {
   )
   writeFileSync(join(dir, file), source)
   const { stdout } = Bun.spawnSync(
-    ['bunx', 'biome', 'lint', '--reporter=json', file],
+    [
+      join(import.meta.dir, '../node_modules/.bin/biome'),
+      'lint',
+      '--reporter=json',
+      file,
+    ],
     { cwd: dir },
   )
   const report = JSON.parse(stdout.toString()) as {
