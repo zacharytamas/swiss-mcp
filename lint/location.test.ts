@@ -95,3 +95,8 @@ test('allows error classes only in *-errors.ts', () => {
 test('lets tests define both', () => {
   expect(flagged('module.test.ts')).toEqual([])
 })
+
+test('flags both in bare schema.ts and errors.ts, which name no module', () => {
+  expect(flagged('schema.ts')).toEqual(flagged('module.ts'))
+  expect(flagged('errors.ts')).toEqual(flagged('module.ts'))
+})

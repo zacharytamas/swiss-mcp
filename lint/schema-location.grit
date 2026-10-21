@@ -24,7 +24,7 @@ or {
     }
   },
   not $filename <: or {
-    r"[\s\S]*[-/]schema\.ts$",
+    r"[\s\S]*-schema\.ts$",
     r"[\s\S]*\.test\.ts$"
   },
   register_diagnostic(span=$name, message="Define named Schemas in a sibling *-schema.ts file (e.g. due.ts -> due-schema.ts) and import them. See AGENTS.md.")
