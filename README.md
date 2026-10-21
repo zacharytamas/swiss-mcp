@@ -1,6 +1,6 @@
 # swiss-mcp
 
-An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Effect](https://effect.website), run on [Bun](https://bun.sh). It speaks MCP over stdio and runs on macOS, where it drives apps through Apple Shortcuts.
+An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Effect](https://effect.website), run on [Bun](https://bun.sh). It speaks MCP over stdio. On macOS it drives apps through Apple Shortcuts, and it reads Slack through the Slack Web API with your user token.
 
 ## Tools
 
@@ -11,6 +11,13 @@ An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Eff
 | `due_complete_reminder` | Mark reminders with this exact `title` done |
 | `due_reschedule_reminder` | Move reminders with this exact `title` to a new `dueDate` |
 | `due_start_timer` / `due_pause_timer` / `due_stop_timer` | Act on the timer with this exact `name` |
+| `slack_search_messages` | Search messages with Slack search syntax; IDs in results are resolved to names |
+| `slack_read_thread` | A thread's parent and replies, by permalink or `channel` + `ts` |
+| `slack_read_channel` | Top-level channel or DM messages, e.g. what led up to a permalink |
+| `slack_resolve` | Name and basic info for user, conversation and user-group IDs |
+| `slack_my_activity` | What you said since a day, grouped by thread or channel with what you replied to |
+| `slack_unanswered_mentions` | Mentions of you, your user groups or your name with no later reply or reaction from you |
+| `slack_draft_to_self` | Posts a draft to your own DM, naming where it should go |
 
 ## How it talks to apps
 
@@ -36,6 +43,16 @@ bun scripts/verify-due.ts --write   # also creates, reschedules and completes a 
 ```
 
 Known limits, measured on Due 26.4.4: dates are this Mac's local wall-clock time, to the minute, because that is what Due stores; reminders whose title has no letter, digit or space aren't listed; there's no way to list timers; an unknown timer name times out after 10 seconds.
+
+## Slack
+
+Create a Slack app in your workspace, add these **User Token Scopes**, install it, and put its User OAuth Token (`xoxp-…`) in `SLACK_USER_TOKEN`: `channels:history`, `groups:history`, `im:history`, `mpim:history`, `channels:read`, `groups:read`, `im:read`, `mpim:read`, `users:read`, `search:read`, `chat:write`, `usergroups:read` (without it, mentions of your user groups aren't checked and the tool says so in `notes`), and `users:read.email` (without it, `slack_resolve` leaves out email addresses). The server never posts anywhere but your own DM.
+
+Slack's composer drafts (`drafts.*`) are an internal API that rejects user tokens with `not_allowed_token_type`, so `slack_draft_to_self` puts the draft in your self-DM, headed with where it should go. `@here` and `@channel` don't count as mentions. Search results follow the search filters in your Slack preferences.
+
+```sh
+bun --env-file=.env scripts/verify-slack.ts   # read-only: calls every Slack read tool against your workspace
+```
 
 ## Development
 
