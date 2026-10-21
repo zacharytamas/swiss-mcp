@@ -104,7 +104,18 @@ const channels: Record<string, Raw[]> = {
       text: `chatter ${i}`,
     })),
   ],
+  CBUSY: [],
 }
+// 150 mentions from the last hour, newest first, then one from a day ago: more fresh ones than any limit.
+const busyOld = ts(24, 11)
+for (let i = 0; i < 150; i++) {
+  channels.CBUSY?.push({
+    ts: `${now - 60 - i}.${String(400000 + i)}`,
+    user: 'UBOB',
+    text: `Busy ${i}`,
+  })
+}
+channels.CBUSY?.push({ ts: busyOld, user: 'UBOB', text: 'Busy old' })
 const match = (channel: string, m: Raw, thread?: string) => ({
   ts: m.ts,
   user: m.user,
@@ -112,6 +123,7 @@ const match = (channel: string, m: Raw, thread?: string) => ({
   permalink: `https://acme.slack.com/archives/${channel}/p${String(m.ts).replace('.', '')}${thread ? `?thread_ts=${thread}` : ''}`,
   channel: { id: channel, name: channel.toLowerCase() },
 })
+const busyMatches = (channels.CBUSY ?? []).map((m) => match('CBUSY', m))
 
 // Pages like Slack: honours limit, cursor and an inclusive oldest/latest window; `order` is Slack's for the method.
 const page = (messages: Raw[], p: URLSearchParams, order: 'asc' | 'desc') => {
@@ -185,8 +197,17 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
                   match('CBIG', threads[earlyRoot]?.[0] ?? {}),
                   match('CFLOOD', channels.CFLOOD?.[0] ?? {}),
                 ]
-              : []
-    return { messages: { total: matches.length, matches } }
+              : q.startsWith('"Busy"')
+                ? busyMatches
+                : []
+    const count = Number(p.get('count') ?? 20)
+    const start = (Number(p.get('page') ?? 1) - 1) * count
+    return {
+      messages: {
+        total: matches.length,
+        matches: matches.slice(start, start + count),
+      },
+    }
   },
   'conversations.replies': (p) =>
     page(threads[String(p.get('ts'))] ?? [], p, 'asc'),
@@ -366,6 +387,36 @@ test('slack_read_channel reports the reaction count Slack gives, not the length 
     (m: { text: string }) => m.text === '@Zach Tamas fyi',
   )
   expect(reacted.reactions).toEqual([{ name: 'eyes', count: 12, byMe: true }])
+})
+
+test('mentions newer than minAgeHours do not use up the limit before older ones are searched', async () => {
+  const result = await callTool('slack_unanswered_mentions', {
+    since: '2000-01-01',
+    minAgeHours: 2,
+    names: ['Busy'],
+    limit: 5,
+  })
+
+  expect(
+    result.structuredContent.unanswered.map(
+      (u: { message: { ts: string } }) => u.message.ts,
+    ),
+  ).toContain(busyOld)
+})
+
+test('a thread reply addressed to a user ID is rejected without posting', async () => {
+  posted.length = 0
+  const result = await callTool('slack_draft_to_self', {
+    to: 'UANN',
+    text: 'hi',
+    threadTs: '1508284197.000015',
+  })
+
+  expect({
+    isError: result.isError,
+    error: JSON.parse(result.content[0].text).error,
+    posted,
+  }).toEqual({ isError: true, error: 'SlackInputInvalid', posted: [] })
 })
 
 describe('slack_my_activity', () => {

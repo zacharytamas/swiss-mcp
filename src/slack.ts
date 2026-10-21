@@ -549,19 +549,27 @@ const make = Effect.gen(function* () {
       } satisfies Message
     })
 
-  const search = (query: string, limit: number, sort: 'timestamp' | 'score') =>
+  // `keep` filters while paging, so `limit` counts only kept matches. Slack serves at most 100 pages.
+  const search = (
+    query: string,
+    limit: number,
+    sort: 'timestamp' | 'score',
+    keep: (m: RawSearchMatch) => boolean = () => true,
+  ) =>
     Effect.gen(function* () {
       const matches: RawSearchMatch[] = []
       let total = 0
-      for (let page = 1; matches.length < limit; page++) {
+      let seen = 0
+      for (let page = 1; matches.length < limit && page <= 100; page++) {
         const res = yield* api.call(
           'search.messages',
-          { query, count: Math.min(100, limit), page, sort, sort_dir: 'desc' },
+          { query, count: 100, page, sort, sort_dir: 'desc' },
           SearchMessages,
         )
         total = res.messages.total
-        matches.push(...res.messages.matches)
-        if (res.messages.matches.length === 0 || matches.length >= total) break
+        seen += res.messages.matches.length
+        matches.push(...res.messages.matches.filter(keep))
+        if (res.messages.matches.length === 0 || seen >= total) break
       }
       return { total, matches: matches.slice(0, limit) }
     })
@@ -825,14 +833,17 @@ const make = Effect.gen(function* () {
         string,
         { via: Set<string>; match: RawSearchMatch }
       >()
+      const now = Date.now() / 1000
+      const oldEnough = (m: RawSearchMatch) =>
+        m.user !== myId && now - Number(m.ts) >= input.minAgeHours * 3600
       for (const { via, query } of queries) {
         const { matches } = yield* search(
           `${query} ${after}`,
           input.limit,
           'timestamp',
+          oldEnough,
         )
         for (const match of matches) {
-          if (match.user === myId) continue
           const key = `${match.channel.id}/${match.ts}`
           const hit = found.get(key) ?? { via: new Set<string>(), match }
           hit.via.add(via)
@@ -840,11 +851,7 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const now = Date.now() / 1000
       const candidates = [...found.values()]
-        .filter(
-          ({ match }) => now - Number(match.ts) >= input.minAgeHours * 3600,
-        )
         .sort((a, b) => Number(b.match.ts) - Number(a.match.ts))
         .slice(0, input.limit)
 
@@ -980,6 +987,12 @@ const make = Effect.gen(function* () {
       if (input.threadTs !== undefined && !TS.test(input.threadTs)) {
         return yield* new SlackInputInvalid({
           message: `threadTs must look like "1508284197.000015", got "${input.threadTs}".`,
+        })
+      }
+      if (isUser && input.threadTs !== undefined) {
+        return yield* new SlackInputInvalid({
+          message:
+            'A thread reply needs the conversation it lives in: pass the DM channel ID (D…) as `to`, not the user ID.',
         })
       }
       const { url } = yield* me
@@ -1241,7 +1254,8 @@ export const SlackToolkit = Toolkit.make(
       }),
       threadTs: Schema.optional(
         Schema.String.annotate({
-          description: 'Parent message ts when the draft is a thread reply.',
+          description:
+            'Parent message ts when the draft is a thread reply. Needs a conversation ID (C…/G…/D…) in `to`, not a user ID.',
         }),
       ),
     }),
