@@ -236,6 +236,12 @@ beforeAll(() => {
     async fetch(req) {
       const method = new URL(req.url).pathname.slice(1)
       const params = new URLSearchParams(await req.text())
+      if (req.headers.get('authorization') === 'Bearer xoxp-revoked') {
+        return Response.json({ ok: false, error: 'invalid_auth' })
+      }
+      if (params.get('user') === 'UGONE') {
+        return Response.json({ ok: false, error: 'user_not_found' })
+      }
       const handler = api[method]
       return Response.json(
         handler
@@ -504,6 +510,34 @@ describe('slack_draft_to_self', () => {
       error: 'SlackInputInvalid',
       posted: [],
     })
+  })
+})
+
+test('slack_resolve lists an unknown ID as unresolved but fails the call on a token error', async () => {
+  const unknown = await callTool('slack_resolve', { ids: ['UEXT', 'UGONE'] })
+  const revoked = await callTool(
+    'slack_resolve',
+    { ids: ['UEXT', 'UGONE'] },
+    'xoxp-revoked',
+  )
+
+  expect({
+    unknown: {
+      isError: unknown.isError,
+      users: unknown.structuredContent.users.map((u: { id: string }) => u.id),
+      unresolved: unknown.structuredContent.unresolved,
+    },
+    revoked: {
+      isError: revoked.isError,
+      error: JSON.parse(revoked.content[0].text).error,
+    },
+  }).toEqual({
+    unknown: {
+      isError: false,
+      users: ['UEXT'],
+      unresolved: [{ id: 'UGONE', error: 'users.info failed: user_not_found' }],
+    },
+    revoked: { isError: true, error: 'SlackApiError:invalid_auth' },
   })
 })
 

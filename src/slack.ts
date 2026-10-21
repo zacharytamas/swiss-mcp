@@ -302,6 +302,13 @@ const Me = Schema.Struct({ id: Schema.String, name: Schema.String })
 
 const TS = /^\d+\.\d+$/
 const PERMALINK = /\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})/
+// Errors users.info and conversations.info document for an ID that is wrong or hidden from this user.
+const PER_ID_ERRORS: ReadonlyArray<string> = [
+  'user_not_found',
+  'user_not_visible',
+  'channel_not_found',
+  'access_denied',
+]
 
 // MCP structuredContent must be plain JSON, so an absent value has to be an absent key, not `undefined`.
 const defined = <T extends Record<string, unknown>>(
@@ -679,10 +686,11 @@ const make = Effect.gen(function* () {
         ids,
         (raw) => {
           const id = raw.replace(/^[<@#!]+|>$/g, '').replace(/^subteam\^/, '')
-          // Only Slack's per-ID answers (user_not_found, channel_not_found…) mark one ID unresolved; a missing token
-          // or a network failure fails the whole call.
+          // Only answers about this one ID mark it unresolved. Auth, scope, rate-limit and transport failures would
+          // repeat for every ID, so they fail the whole call.
           const unresolved = (e: SlackError) =>
-            e._tag === 'SlackApiError' || e._tag === 'SlackInputInvalid'
+            e._tag === 'SlackInputInvalid' ||
+            (e._tag === 'SlackApiError' && PER_ID_ERRORS.includes(e.code))
               ? Effect.sync(() => {
                   result.unresolved.push({ id: raw, error: e.message })
                 })
