@@ -17,6 +17,11 @@ export const decode = (u: unknown) => Schema.decodeUnknownExit(A)(u)
 export const nonEmpty = Schema.isNonEmpty()
 export const inline = [Schema.String]
 export class Person extends Schema.Class<Person>('Person')({}) {}
+export const NumberFromString = Schema.decodeTo(Schema.Number)(Schema.String)
+export const StringToNumber = Schema.encodeTo(Schema.String)(Schema.Number)
+export const Rebuilt = Schema.make<typeof A>(A.ast)
+export const Trimmed = Schema.decode({ decode: (s) => s, encode: (s) => s })
+export const Json = Schema.toCodecJson(A)
 `
 
 const flagged = (file: string) => {
@@ -51,6 +56,11 @@ const flagged = (file: string) => {
 
 test('flags named Schemas and error classes, not values derived from Schemas', () => {
   expect(flagged('module.ts')).toEqual([
+    '15 schema',
+    '16 schema',
+    '17 schema',
+    '18 schema',
+    '19 schema',
     '2 schema',
     '3 schema',
     '4 schema',
@@ -66,6 +76,11 @@ test('allows named Schemas only in *-schema.ts', () => {
 
 test('allows error classes only in *-errors.ts', () => {
   expect(flagged('module-errors.ts')).toEqual([
+    '15 schema',
+    '16 schema',
+    '17 schema',
+    '18 schema',
+    '19 schema',
     '2 schema',
     '3 schema',
     '4 schema',

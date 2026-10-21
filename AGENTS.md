@@ -6,7 +6,7 @@ A named Schema goes in a sibling file named after the module that primarily uses
 
 - Export what the module needs. Keep helpers that only build those Schemas (e.g. `Name`, `LocalDateTime` in `due-schema.ts`) unexported.
 - Inline, unnamed Schemas at a call site (e.g. `contract(Schema.Struct({ op: ... }), ...)`) stay where they are.
-- Values produced from a Schema (`Schema.decodeUnknownSync(Reminder)(payload)`, `Schema.is(Reminder)`, `Schema.isNonEmpty()`) are not Schemas and may live anywhere.
+- Values produced from a Schema (`Schema.decodeUnknownSync(Reminder)(payload)`, `Schema.is(Reminder)`, `Schema.isNonEmpty()`) are not Schemas and may live anywhere. Combinators that return a Schema (`Schema.decodeTo`, `Schema.encodeTo`, `Schema.decode`, `Schema.make`, `Schema.toCodecJson`) are Schemas.
 - Tests (`*.test.ts`) may define throwaway Schemas inline.
 
 `lint/schema-location.grit` enforces this as a Biome plugin, so `bun run check` fails on a named Schema anywhere else.

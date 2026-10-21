@@ -2,7 +2,7 @@ language js
 
 pattern schema_expression() {
   and { r"^\(?\s*Schema\.[\s\S]*",
-  not r"^\(?\s*Schema\.(?:decode|encode|is|asserts|make|resolveAnnotations|to(?:JsonSchemaDocument|Standard|Equivalence|Formatter|Iso|Representation|DifferJsonPatch|EncoderXml))[\s\S]*" }
+  not r"^\(?\s*Schema\.(?:(?:de|en)code(?:Unknown)?(?:Effect|Exit|Option|Promise|Result|Sync)|is(?:[A-Z]\w*)?|asserts|makeFilter(?:Group)?|makeIs\w*|resolveAnnotations(?:Key)?|to(?:JsonSchemaDocument|Equivalence|Formatter|Iso(?:Focus|Source)?|Representation|DifferJsonPatch|EncoderXml))\b[\s\S]*" }
 }
 
 or {
