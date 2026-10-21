@@ -155,7 +155,12 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
       name:
         p.get('user') === ME ? 'ztamas' : String(p.get('user')).toLowerCase(),
       real_name: p.get('user') === ME ? 'Zach Tamas' : 'Someone',
-      profile: { display_name: '' },
+      // UEXT is a Slack Connect user: Slack sends null for fields it has no value for.
+      ...(p.get('user') === 'UEXT' ? { real_name: null, tz: null } : {}),
+      profile:
+        p.get('user') === 'UEXT'
+          ? { display_name: null, real_name: null, title: null, email: null }
+          : { display_name: '' },
     },
   }),
   'usergroups.list': () => ({
@@ -402,6 +407,25 @@ test('mentions newer than minAgeHours do not use up the limit before older ones 
       (u: { message: { ts: string } }) => u.message.ts,
     ),
   ).toContain(busyOld)
+})
+
+test('slack_resolve resolves a user whose profile fields are null, leaving those fields out', async () => {
+  const result = await callTool('slack_resolve', { ids: ['UEXT'] })
+
+  expect(result.structuredContent).toEqual({
+    users: [
+      {
+        id: 'UEXT',
+        name: 'uext',
+        handle: 'uext',
+        isBot: false,
+        deleted: false,
+      },
+    ],
+    channels: [],
+    usergroups: [],
+    unresolved: [],
+  })
 })
 
 test('a thread reply addressed to a user ID is rejected without posting', async () => {

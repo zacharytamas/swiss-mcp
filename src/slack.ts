@@ -76,18 +76,21 @@ const RawSearchMatch = Schema.Struct({
 })
 type RawSearchMatch = typeof RawSearchMatch.Type
 
+// Slack may send null for any user field it has no value for, notably on Slack Connect users.
+const Maybe = <S extends Schema.Top>(s: S) =>
+  Schema.optional(Schema.NullishOr(s))
 const RawUser = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
-  real_name: Schema.optional(Schema.String),
-  deleted: Schema.optional(Schema.Boolean),
-  is_bot: Schema.optional(Schema.Boolean),
-  tz: Schema.optional(Schema.String),
+  real_name: Maybe(Schema.String),
+  deleted: Maybe(Schema.Boolean),
+  is_bot: Maybe(Schema.Boolean),
+  tz: Maybe(Schema.String),
   profile: Schema.Struct({
-    display_name: Schema.optional(Schema.String),
-    real_name: Schema.optional(Schema.String),
-    title: Schema.optional(Schema.String),
-    email: Schema.optional(Schema.String),
+    display_name: Maybe(Schema.String),
+    real_name: Maybe(Schema.String),
+    title: Maybe(Schema.String),
+    email: Maybe(Schema.String),
   }),
 })
 
@@ -359,10 +362,10 @@ const make = Effect.gen(function* () {
         isBot: u.is_bot ?? false,
         deleted: u.deleted ?? false,
         ...defined({
-          realName: u.profile.real_name || u.real_name,
+          realName: u.profile.real_name || u.real_name || undefined,
           title: u.profile.title || undefined,
-          email: u.profile.email,
-          timezone: u.tz,
+          email: u.profile.email || undefined,
+          timezone: u.tz || undefined,
         }),
       }
       users.set(id, info)
