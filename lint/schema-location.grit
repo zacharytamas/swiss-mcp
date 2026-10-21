@@ -1,21 +1,26 @@
 language js
 
+pattern schema_expression() {
+  and { r"^\(?\s*Schema\.[\s\S]*",
+  not r"^\(?\s*Schema\.(?:decode|encode|is|asserts|make|resolveAnnotations|to(?:JsonSchemaDocument|Standard|Equivalence|Formatter|Iso|Representation|DifferJsonPatch|EncoderXml))[\s\S]*" }
+}
+
 or {
   JsVariableDeclarator(id=$name, initializer=JsInitializerClause(expression=$value)),
   JsFunctionDeclaration(id=$name, body=$value)
 } where {
   $value <: or {
-    r"^Schema\.[\s\S]*",
+    schema_expression(),
     JsArrowFunctionExpression(body=$body) where {
       $body <: or {
-        r"^\(?\s*Schema\.[\s\S]*",
+        schema_expression(),
         JsFunctionBody() where {
-          $body <: contains JsReturnStatement(argument=r"^Schema\.[\s\S]*")
+          $body <: contains JsReturnStatement(argument=schema_expression())
         }
       }
     },
     JsFunctionBody() where {
-      $value <: contains JsReturnStatement(argument=r"^Schema\.[\s\S]*")
+      $value <: contains JsReturnStatement(argument=schema_expression())
     }
   },
   not $filename <: or {
