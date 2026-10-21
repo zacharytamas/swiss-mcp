@@ -124,6 +124,15 @@ const match = (channel: string, m: Raw, thread?: string) => ({
   channel: { id: channel, name: channel.toLowerCase() },
 })
 const busyMatches = (channels.CBUSY ?? []).map((m) => match('CBUSY', m))
+// A DM match the way search.messages documents it: `type: "im"`, peer's user ID as the channel name, no is_im flag.
+const dmMatch = {
+  ts: ts(3, 12),
+  type: 'im',
+  user: 'UBOB',
+  text: 'Dm only',
+  permalink: `https://acme.slack.com/archives/DBOB/p${ts(3, 12).replace('.', '')}`,
+  channel: { id: 'DBOB', name: 'UBOB' },
+}
 
 // Pages like Slack: honours limit, cursor and an inclusive oldest/latest window; `order` is Slack's for the method.
 const page = (messages: Raw[], p: URLSearchParams, order: 'asc' | 'desc') => {
@@ -204,7 +213,9 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
                 ]
               : q.startsWith('"Busy"')
                 ? busyMatches
-                : []
+                : q.startsWith('"Dm only"')
+                  ? [dmMatch]
+                  : []
     const count = Number(p.get('count') ?? 20)
     const start = (Number(p.get('page') ?? 1) - 1) * count
     return {
@@ -510,6 +521,18 @@ describe('slack_draft_to_self', () => {
       error: 'SlackInputInvalid',
       posted: [],
     })
+  })
+})
+
+test('slack_search_messages recognizes a DM by the match type and names it after the other person', async () => {
+  const result = await callTool('slack_search_messages', {
+    query: '"Dm only"',
+  })
+
+  expect(result.structuredContent.messages[0].channel).toEqual({
+    id: 'DBOB',
+    name: '@Someone',
+    kind: 'dm',
   })
 })
 

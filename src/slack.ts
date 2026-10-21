@@ -62,6 +62,7 @@ type RawMessage = typeof RawMessage.Type
 
 const RawSearchMatch = Schema.Struct({
   ts: Schema.String,
+  type: Schema.optional(Schema.String),
   user: Schema.optional(Schema.String),
   username: Schema.optional(Schema.String),
   text: Schema.optional(Schema.String),
@@ -537,7 +538,8 @@ const make = Effect.gen(function* () {
   const fromMatch = (m: RawSearchMatch) =>
     Effect.gen(function* () {
       const { id: myId } = yield* me
-      const kind = kindOf(m.channel)
+      // search.messages documents `type: "im"` for DMs; `channel.is_im` is also sent but undocumented.
+      const kind = m.type === 'im' ? 'dm' : kindOf(m.channel)
       // For a DM, search names the channel after the other person's user ID.
       const name =
         kind === 'dm' ? `@${yield* userName(m.channel.name)}` : m.channel.name
