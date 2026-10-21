@@ -25,6 +25,7 @@
       "semicolons": "asNeeded"
     }
   },
+  "plugins": ["./lint/schema-location.grit"],
   "assist": {
     "enabled": true,
     "actions": {

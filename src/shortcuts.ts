@@ -9,13 +9,9 @@ import {
   Stream,
 } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
+import { ShortcutId } from './shortcuts-schema.ts'
 
 const OUTPUT_LIMIT = 4096
-
-export const ShortcutId = Schema.String.check(Schema.isUUID()).pipe(
-  Schema.brand('ShortcutId'),
-)
-export type ShortcutId = typeof ShortcutId.Type
 
 type JsonCodec = Schema.Codec<unknown, unknown, never, never>
 
