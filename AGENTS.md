@@ -10,3 +10,9 @@ A named Schema goes in a sibling file named after the module that primarily uses
 - Tests (`*.test.ts`) may define throwaway Schemas inline.
 
 `lint/schema-location.grit` enforces this as a Biome plugin, so `bun run check` fails on a named Schema anywhere else.
+
+## Error classes live in `*-errors.ts`
+
+A class that extends `Schema.TaggedError`, `Schema.Error`, `Data.TaggedError`, `Data.Error` or `Error` goes in a sibling `*-errors.ts` file, along with the union type of those errors. For example, `src/shortcuts.ts` imports its errors from `src/shortcuts-errors.ts`. Field records shared only by the errors (e.g. `fields`) stay unexported there. Tests may define error classes inline.
+
+`lint/error-location.grit` enforces this. `lint/location.test.ts` covers both rules, so add a case there when you change either one.
