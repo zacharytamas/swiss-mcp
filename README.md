@@ -46,7 +46,7 @@ Known limits, measured on Due 26.4.4: dates are this Mac's local wall-clock time
 
 ## Slack
 
-Create a Slack app in your workspace, add these **User Token Scopes**, install it, and put its User OAuth Token (`xoxp-…`) in `SLACK_USER_TOKEN`: `channels:history`, `groups:history`, `im:history`, `mpim:history`, `channels:read`, `groups:read`, `im:read`, `mpim:read`, `users:read`, `search:read`, `chat:write`, and `usergroups:read` (without it, mentions of your user groups aren't checked and the tool says so in `notes`). The server never posts anywhere but your own DM.
+Create a Slack app in your workspace, add these **User Token Scopes**, install it, and put its User OAuth Token (`xoxp-…`) in `SLACK_USER_TOKEN`: `channels:history`, `groups:history`, `im:history`, `mpim:history`, `channels:read`, `groups:read`, `im:read`, `mpim:read`, `users:read`, `search:read`, `chat:write`, `usergroups:read` (without it, mentions of your user groups aren't checked and the tool says so in `notes`), and `users:read.email` (without it, `slack_resolve` leaves out email addresses). The server never posts anywhere but your own DM.
 
 Slack's composer drafts (`drafts.*`) are an internal API that rejects user tokens with `not_allowed_token_type`, so `slack_draft_to_self` puts the draft in your self-DM, headed with where it should go. `@here` and `@channel` don't count as mentions. Search results follow the search filters in your Slack preferences.
 

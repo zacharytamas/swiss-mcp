@@ -46,6 +46,7 @@ export type SlackError =
 const RawReaction = Schema.Struct({
   name: Schema.String,
   users: Schema.Array(Schema.String),
+  count: Schema.optional(Schema.Number),
 })
 
 const RawMessage = Schema.Struct({
@@ -515,7 +516,7 @@ const make = Effect.gen(function* () {
           ? {
               reactions: raw.reactions.map((r) => ({
                 name: r.name,
-                count: r.users.length,
+                count: r.count ?? r.users.length,
                 byMe: r.users.includes(myId),
               })),
             }
@@ -798,7 +799,7 @@ const make = Effect.gen(function* () {
       const myUser = yield* user(myId)
       const names = input.names ?? [
         ...new Set(
-          [myUser.realName?.split(' ')[0], myUser.name].filter((n) => !!n),
+          [myUser.realName?.split(' ')[0], myUser.handle].filter((n) => !!n),
         ),
       ]
 
@@ -1049,7 +1050,19 @@ const Hours = Schema.Number.check(
 )
 const Since = Schema.String.check(
   Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/, { message: 'must be YYYY-MM-DD' }),
-).annotate({ description: 'Earliest day to include, YYYY-MM-DD, inclusive.' })
+)
+  .annotate({ description: 'Earliest day to include, YYYY-MM-DD, inclusive.' })
+  .check(
+    Schema.makeFilter<string>((s) => {
+      const [y, m, d] = s.split('-').map(Number)
+      const back = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d))
+      return back.getUTCFullYear() === y &&
+        back.getUTCMonth() + 1 === m &&
+        back.getUTCDate() === d
+        ? undefined
+        : `${s} does not exist`
+    }),
+  )
 const Locator = {
   permalink: Schema.optional(
     Schema.String.annotate({

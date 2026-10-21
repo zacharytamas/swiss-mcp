@@ -89,7 +89,8 @@ const channels: Record<string, Raw[]> = {
       ts: reacted,
       user: 'UANN',
       text: '<@UME> fyi',
-      reactions: [{ name: 'eyes', users: [ME] }],
+      // Slack truncates `users` on popular reactions; `count` is the true total.
+      reactions: [{ name: 'eyes', users: [ME], count: 12 }],
     },
     { ts: tooRecent, user: 'UANN', text: '<@UME> quick one' },
     { ts: groupOnly, user: 'UBOB', text: '<!subteam^SENG|@eng> review please' },
@@ -139,7 +140,8 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
   'users.info': (p) => ({
     user: {
       id: p.get('user'),
-      name: p.get('user') === ME ? 'zach' : String(p.get('user')).toLowerCase(),
+      name:
+        p.get('user') === ME ? 'ztamas' : String(p.get('user')).toLowerCase(),
       real_name: p.get('user') === ME ? 'Zach Tamas' : 'Someone',
       profile: { display_name: '' },
     },
@@ -269,7 +271,8 @@ const callTool = async (
       .find((message) => message.id === 2)
     if (found) {
       proc.kill()
-      return found.result
+      // 2025-06-18 answers invalid arguments with a JSON-RPC error instead of a result.
+      return found.result ?? { error: found.error }
     }
   }
   throw new Error(`server exited without answering ${name}`)
@@ -327,6 +330,42 @@ describe('slack_unanswered_mentions', () => {
       ],
     })
   })
+})
+
+describe('slack_unanswered_mentions defaults', () => {
+  test('searches my first name and my Slack handle when names is omitted', async () => {
+    const result = await callTool('slack_unanswered_mentions', {
+      since: '2000-01-01',
+    })
+
+    expect(result.structuredContent.searchedFor).toEqual([
+      '<@UME>',
+      '<!subteam^SENG>',
+      '"Zach"',
+      '"ztamas"',
+    ])
+  })
+
+  test.each(['2026-02-30', '2026-13-01'])(
+    'rejects the impossible date %s before calling Slack',
+    async (since) => {
+      const result = await callTool('slack_my_activity', { since })
+
+      expect(JSON.stringify(result)).toContain(`${since} does not exist`)
+    },
+  )
+})
+
+test('slack_read_channel reports the reaction count Slack gives, not the length of a truncated user list', async () => {
+  const result = await callTool('slack_read_channel', {
+    channel: 'CGEN',
+    limit: 10,
+  })
+
+  const reacted = result.structuredContent.messages.find(
+    (m: { text: string }) => m.text === '@Zach Tamas fyi',
+  )
+  expect(reacted.reactions).toEqual([{ name: 'eyes', count: 12, byMe: true }])
 })
 
 describe('slack_my_activity', () => {
