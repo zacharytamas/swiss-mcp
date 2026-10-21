@@ -1,14 +1,19 @@
 #!/usr/bin/env bun
 import { BunRuntime, BunServices } from '@effect/platform-bun'
 import { Effect, Layer, Logger } from 'effect'
-import { McpProtocol, McpServer } from 'effect/ai'
+import { McpProtocol, McpServer, Toolkit } from 'effect/ai'
 import pkg from '../package.json' with { type: 'json' }
 import { DueToolkit, DueToolkitLive } from './due.ts'
 import { Shortcuts } from './shortcuts.ts'
+import { SlackApi, SlackToolkit, SlackToolkitLive } from './slack.ts'
 
-export const ServerLive = McpServer.toolkit(DueToolkit).pipe(
+export const ServerLive = McpServer.toolkit(
+  Toolkit.merge(DueToolkit, SlackToolkit),
+).pipe(
   Layer.provide(DueToolkitLive),
+  Layer.provide(SlackToolkitLive),
   Layer.provide(Shortcuts.layer),
+  Layer.provide(SlackApi.layer),
   Layer.provideMerge(
     McpServer.layerStdio({
       name: pkg.name,
