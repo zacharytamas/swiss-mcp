@@ -8,141 +8,43 @@ import {
   Schema,
 } from 'effect'
 import { Tool, Toolkit } from 'effect/ai'
+import {
+  SlackApiError,
+  type SlackError,
+  SlackInputInvalid,
+  SlackNotConfigured,
+  SlackRequestFailed,
+} from './slack-errors.ts'
+import {
+  AuthTest,
+  ChannelInfo,
+  ChannelRef,
+  Conversation,
+  ConversationsInfo,
+  Count,
+  Hours,
+  ImPage,
+  Locator,
+  Me,
+  Mention,
+  Message,
+  MessagePage,
+  PostMessage,
+  type RawMessage,
+  type RawSearchMatch,
+  SearchMessages,
+  Since,
+  ToolFailure,
+  UsergroupInfo,
+  UsergroupsList,
+  UserInfo,
+  UsersInfo,
+} from './slack-schema.ts'
 
 const MAX_RATE_LIMIT_RETRIES = 3
 // Most messages one composite reads per thread or channel; past these, results say they are incomplete.
 const ACTIVITY_READ_LIMIT = 200
 const MENTION_SCAN_LIMIT = 1000
-
-const fields = { method: Schema.String, message: Schema.String }
-
-export class SlackNotConfigured extends Schema.TaggedError<SlackNotConfigured>()(
-  'SlackNotConfigured',
-  { message: Schema.String },
-) {}
-
-export class SlackApiError extends Schema.TaggedError<SlackApiError>()(
-  'SlackApiError',
-  { ...fields, code: Schema.String },
-) {}
-
-export class SlackRequestFailed extends Schema.TaggedError<SlackRequestFailed>()(
-  'SlackRequestFailed',
-  fields,
-) {}
-
-export class SlackInputInvalid extends Schema.TaggedError<SlackInputInvalid>()(
-  'SlackInputInvalid',
-  { message: Schema.String },
-) {}
-
-export type SlackError =
-  | SlackNotConfigured
-  | SlackApiError
-  | SlackRequestFailed
-  | SlackInputInvalid
-
-// Raw shapes Slack returns. Decoding ignores the many fields these leave out.
-const RawReaction = Schema.Struct({
-  name: Schema.String,
-  users: Schema.Array(Schema.String),
-  count: Schema.optional(Schema.Number),
-})
-
-const RawMessage = Schema.Struct({
-  ts: Schema.String,
-  thread_ts: Schema.optional(Schema.String),
-  user: Schema.optional(Schema.String),
-  username: Schema.optional(Schema.String),
-  text: Schema.optional(Schema.String),
-  reply_count: Schema.optional(Schema.Number),
-  reactions: Schema.optional(Schema.Array(RawReaction)),
-})
-type RawMessage = typeof RawMessage.Type
-
-const RawSearchMatch = Schema.Struct({
-  ts: Schema.String,
-  type: Schema.optional(Schema.String),
-  user: Schema.optional(Schema.String),
-  username: Schema.optional(Schema.String),
-  text: Schema.optional(Schema.String),
-  permalink: Schema.String,
-  channel: Schema.Struct({
-    id: Schema.String,
-    name: Schema.String,
-    is_im: Schema.optional(Schema.Boolean),
-    is_mpim: Schema.optional(Schema.Boolean),
-    is_private: Schema.optional(Schema.Boolean),
-  }),
-})
-type RawSearchMatch = typeof RawSearchMatch.Type
-
-// Slack may send null for any user field it has no value for, notably on Slack Connect users.
-const Maybe = <S extends Schema.Top>(s: S) =>
-  Schema.optional(Schema.NullishOr(s))
-const RawUser = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  real_name: Maybe(Schema.String),
-  deleted: Maybe(Schema.Boolean),
-  is_bot: Maybe(Schema.Boolean),
-  tz: Maybe(Schema.String),
-  profile: Schema.Struct({
-    display_name: Maybe(Schema.String),
-    real_name: Maybe(Schema.String),
-    title: Maybe(Schema.String),
-    email: Maybe(Schema.String),
-  }),
-})
-
-const RawConversation = Schema.Struct({
-  id: Schema.String,
-  name: Schema.optional(Schema.String),
-  user: Schema.optional(Schema.String),
-  is_im: Schema.optional(Schema.Boolean),
-  is_mpim: Schema.optional(Schema.Boolean),
-  is_private: Schema.optional(Schema.Boolean),
-  is_archived: Schema.optional(Schema.Boolean),
-  num_members: Schema.optional(Schema.Number),
-  topic: Schema.optional(Schema.Struct({ value: Schema.String })),
-  purpose: Schema.optional(Schema.Struct({ value: Schema.String })),
-})
-
-const RawUsergroup = Schema.Struct({
-  id: Schema.String,
-  handle: Schema.String,
-  name: Schema.String,
-  users: Schema.optional(Schema.Array(Schema.String)),
-})
-
-const AuthTest = Schema.Struct({
-  user_id: Schema.String,
-  url: Schema.String,
-})
-const UsersInfo = Schema.Struct({ user: RawUser })
-const ConversationsInfo = Schema.Struct({ channel: RawConversation })
-const UsergroupsList = Schema.Struct({ usergroups: Schema.Array(RawUsergroup) })
-const Cursor = Schema.optional(
-  Schema.Struct({ next_cursor: Schema.optional(Schema.String) }),
-)
-const MessagePage = Schema.Struct({
-  messages: Schema.Array(RawMessage),
-  has_more: Schema.optional(Schema.Boolean),
-  response_metadata: Cursor,
-})
-const ImPage = Schema.Struct({
-  channels: Schema.Array(
-    Schema.Struct({ id: Schema.String, user: Schema.String }),
-  ),
-  response_metadata: Cursor,
-})
-const SearchMessages = Schema.Struct({
-  messages: Schema.Struct({
-    total: Schema.Number,
-    matches: Schema.Array(RawSearchMatch),
-  }),
-})
-const PostMessage = Schema.Struct({ channel: Schema.String, ts: Schema.String })
 
 type Params = Record<string, string | number | boolean | undefined>
 
@@ -238,68 +140,6 @@ export class SlackApi extends Context.Service<
     }),
   )
 }
-
-// What every tool returns for a message: references resolved, so an agent never has to look up an ID.
-const ChannelRef = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  kind: Schema.Literals(['channel', 'private', 'dm', 'group_dm']),
-})
-type ChannelRef = typeof ChannelRef.Type
-
-const Message = Schema.Struct({
-  channel: ChannelRef,
-  ts: Schema.String,
-  threadTs: Schema.optionalKey(Schema.String),
-  author: Schema.Struct({ id: Schema.String, name: Schema.String }),
-  fromMe: Schema.Boolean,
-  text: Schema.String,
-  permalink: Schema.String,
-  replyCount: Schema.optionalKey(Schema.Number),
-  reactions: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({
-        name: Schema.String,
-        count: Schema.Number,
-        byMe: Schema.Boolean,
-      }),
-    ),
-  ),
-})
-type Message = typeof Message.Type
-
-const UserInfo = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  handle: Schema.String,
-  realName: Schema.optionalKey(Schema.String),
-  title: Schema.optionalKey(Schema.String),
-  email: Schema.optionalKey(Schema.String),
-  timezone: Schema.optionalKey(Schema.String),
-  isBot: Schema.Boolean,
-  deleted: Schema.Boolean,
-})
-type UserInfo = typeof UserInfo.Type
-
-const ChannelInfo = Schema.Struct({
-  ...ChannelRef.fields,
-  dmWith: Schema.optionalKey(Schema.String),
-  archived: Schema.Boolean,
-  members: Schema.optionalKey(Schema.Number),
-  topic: Schema.optionalKey(Schema.String),
-  purpose: Schema.optionalKey(Schema.String),
-})
-type ChannelInfo = typeof ChannelInfo.Type
-
-const UsergroupInfo = Schema.Struct({
-  id: Schema.String,
-  handle: Schema.String,
-  name: Schema.String,
-  members: Schema.optionalKey(Schema.Array(Schema.String)),
-})
-type UsergroupInfo = typeof UsergroupInfo.Type
-
-const Me = Schema.Struct({ id: Schema.String, name: Schema.String })
 
 const TS = /^\d+\.\d+$/
 const PERMALINK = /\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})/
@@ -1041,11 +881,6 @@ const make = Effect.gen(function* () {
   }
 })
 
-const ToolFailure = Schema.Struct({
-  error: Schema.String,
-  message: Schema.String,
-})
-
 const slackTool = <
   const N extends string,
   P extends Schema.Top,
@@ -1068,49 +903,6 @@ const slackTool = <
     .annotate(Tool.Readonly, effect === 'reads')
     .annotate(Tool.Destructive, false)
     .annotate(Tool.OpenWorld, true)
-
-const Count = (maximum: number) =>
-  Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }))
-const Hours = Schema.Number.check(
-  Schema.isBetween({ minimum: 0, maximum: 24 * 90 }),
-)
-const Since = Schema.String.check(
-  Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/, { message: 'must be YYYY-MM-DD' }),
-)
-  .annotate({ description: 'Earliest day to include, YYYY-MM-DD, inclusive.' })
-  .check(
-    Schema.makeFilter<string>((s) => {
-      const [y, m, d] = s.split('-').map(Number)
-      const back = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d))
-      return back.getUTCFullYear() === y &&
-        back.getUTCMonth() + 1 === m &&
-        back.getUTCDate() === d
-        ? undefined
-        : `${s} does not exist`
-    }),
-  )
-const Locator = {
-  permalink: Schema.optional(
-    Schema.String.annotate({
-      description:
-        'A Slack message link (…/archives/C…/p…). Replaces channel and ts.',
-    }),
-  ),
-  channel: Schema.optional(
-    Schema.String.annotate({ description: 'Conversation ID: C…, G… or D….' }),
-  ),
-}
-const Conversation = Schema.Struct({
-  channel: ChannelRef,
-  threadTs: Schema.optionalKey(Schema.String),
-  messages: Schema.Array(Message),
-  complete: Schema.Boolean,
-})
-const Mention = Schema.Struct({
-  via: Schema.Array(Schema.Literals(['direct', 'group', 'name'])),
-  ageHours: Schema.Number,
-  message: Message,
-})
 
 const searchTips =
   'Query uses Slack search syntax: from:<@U…>, in:<#C…>, with:<@U…>, after:/before:/on:YYYY-MM-DD (after: and before: exclude the named day), is:thread, has:reaction, "exact phrase". Results follow the search filters set in your Slack preferences, and Slack may return one match for several nearby matching messages.'
