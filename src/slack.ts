@@ -10,6 +10,9 @@ import {
 import { Tool, Toolkit } from 'effect/ai'
 
 const MAX_RATE_LIMIT_RETRIES = 3
+// Most messages one composite reads per thread or channel; past these, results say they are incomplete.
+const ACTIVITY_READ_LIMIT = 200
+const MENTION_SCAN_LIMIT = 1000
 
 const fields = { method: Schema.String, message: Schema.String }
 
@@ -135,7 +138,6 @@ const SearchMessages = Schema.Struct({
   }),
 })
 const PostMessage = Schema.Struct({ channel: Schema.String, ts: Schema.String })
-const Permalink = Schema.Struct({ permalink: Schema.String })
 
 type Params = Record<string, string | number | boolean | undefined>
 
@@ -392,13 +394,7 @@ const make = Effect.gen(function* () {
         { channel: id },
         ConversationsInfo,
       )
-      const kind: ChannelRef['kind'] = c.is_im
-        ? 'dm'
-        : c.is_mpim
-          ? 'group_dm'
-          : c.is_private
-            ? 'private'
-            : 'channel'
+      const kind = kindOf(c)
       const info: ChannelInfo = {
         id: c.id,
         kind,
@@ -530,13 +526,7 @@ const make = Effect.gen(function* () {
   const fromMatch = (m: RawSearchMatch) =>
     Effect.gen(function* () {
       const { id: myId } = yield* me
-      const kind: ChannelRef['kind'] = m.channel.is_im
-        ? 'dm'
-        : m.channel.is_mpim
-          ? 'group_dm'
-          : m.channel.is_private
-            ? 'private'
-            : 'channel'
+      const kind = kindOf(m.channel)
       // For a DM, search names the channel after the other person's user ID.
       const name =
         kind === 'dm' ? `@${yield* userName(m.channel.name)}` : m.channel.name
@@ -747,16 +737,26 @@ const make = Effect.gen(function* () {
           Effect.gen(function* () {
             const first = group.at(-1) ?? group[0]
             if (!first) return undefined
+            // A capped read can drop some of my own messages, so the ones search found are merged back in, and
+            // `complete` says whether anything else was left out.
+            const withMine = (read: ReadonlyArray<Message>) => {
+              const byTs = new Map(read.map((m) => [m.ts, m]))
+              for (const m of group) if (!byTs.has(m.ts)) byTs.set(m.ts, m)
+              return [...byTs.values()].sort(
+                (a, b) => Number(a.ts) - Number(b.ts),
+              )
+            }
             if (first.threadTs) {
               const thread = yield* readThread(
                 first.channel.id,
                 first.threadTs,
-                200,
+                ACTIVITY_READ_LIMIT,
               )
               return {
                 channel: thread.channel,
                 threadTs: first.threadTs,
-                messages: thread.messages,
+                messages: withMine(thread.messages),
+                complete: !thread.hasMore,
               }
             }
             const oldest = first.ts
@@ -769,13 +769,13 @@ const make = Effect.gen(function* () {
             const during = yield* readChannel(
               first.channel.id,
               { oldest, latest: newest },
-              200,
+              ACTIVITY_READ_LIMIT,
             )
-            const seen = new Set<string>()
-            const messages = [...before.messages, ...during.messages].filter(
-              (m) => !seen.has(m.ts) && seen.add(m.ts),
-            )
-            return { channel: during.channel, messages }
+            return {
+              channel: during.channel,
+              messages: withMine([...before.messages, ...during.messages]),
+              complete: !during.hasMore,
+            }
           }),
         { concurrency: 3 },
       )
@@ -847,84 +847,99 @@ const make = Effect.gen(function* () {
         .sort((a, b) => Number(b.match.ts) - Number(a.match.ts))
         .slice(0, input.limit)
 
-      // Each thread or channel is fetched once, however many mentions it holds.
-      const threadCache = new Map<string, ReadonlyArray<RawMessage>>()
-      const thread = (channelId: string, ts: string) =>
-        Effect.gen(function* () {
-          const key = `${channelId}/${ts}`
-          const hit = threadCache.get(key)
-          if (hit) return hit
-          const { messages } = yield* pages(
-            'conversations.replies',
-            { channel: channelId, ts },
-            1000,
-          )
-          threadCache.set(key, messages)
-          return messages
-        })
-      const oldestByChannel = new Map<string, string>()
-      for (const { match } of candidates) {
-        if (parsePermalink(match.permalink)?.threadTs) continue
-        const current = oldestByChannel.get(match.channel.id)
-        if (!current || Number(match.ts) < Number(current)) {
-          oldestByChannel.set(match.channel.id, match.ts)
-        }
+      // Each scan starts at the earliest mention it has to cover, so a thread or channel is read once however many
+      // mentions it holds.
+      const scanKey = (channelId: string, threadTs: string | undefined) =>
+        threadTs ? `${channelId}/${threadTs}` : channelId
+      const earliest = new Map<string, string>()
+      const noteEarliest = (key: string, ts: string) => {
+        const current = earliest.get(key)
+        if (!current || Number(ts) < Number(current)) earliest.set(key, ts)
       }
-      const historyCache = new Map<string, ReadonlyArray<RawMessage>>()
-      const history = (channelId: string) =>
+      for (const { match } of candidates) {
+        const threadTs = parsePermalink(match.permalink)?.threadTs
+        noteEarliest(scanKey(match.channel.id, threadTs), match.ts)
+        // A top-level mention's own thread is scanned from the mention.
+        if (!threadTs)
+          noteEarliest(scanKey(match.channel.id, match.ts), match.ts)
+      }
+      const scans = new Map<
+        string,
+        { messages: ReadonlyArray<RawMessage>; hasMore: boolean }
+      >()
+      const scan = (channelId: string, threadTs: string | undefined) =>
         Effect.gen(function* () {
-          const hit = historyCache.get(channelId)
+          const key = scanKey(channelId, threadTs)
+          const hit = scans.get(key)
           if (hit) return hit
-          const { messages } = yield* pages(
-            'conversations.history',
+          const result = yield* pages(
+            threadTs ? 'conversations.replies' : 'conversations.history',
             {
               channel: channelId,
-              oldest: oldestByChannel.get(channelId),
+              ts: threadTs,
+              oldest: earliest.get(key) ?? threadTs,
               inclusive: true,
             },
-            1000,
+            MENTION_SCAN_LIMIT,
           )
-          historyCache.set(channelId, messages)
-          return messages
+          scans.set(key, result)
+          return result
         })
 
-      const checked = yield* Effect.forEach(
+      const classified = yield* Effect.forEach(
         candidates,
         ({ via, match }) =>
           Effect.gen(function* () {
             const threadTs = parsePermalink(match.permalink)?.threadTs
-            const around = threadTs
-              ? yield* thread(match.channel.id, threadTs)
-              : yield* history(match.channel.id)
-            const self = around.find((m) => m.ts === match.ts)
+            const around = yield* scan(match.channel.id, threadTs)
+            const self = around.messages.find((m) => m.ts === match.ts)
             const replies =
               !threadTs && self?.reply_count
-                ? yield* thread(match.channel.id, match.ts)
-                : []
-            const later = [...around, ...replies].filter(
-              (m) => Number(m.ts) > Number(match.ts),
-            )
-            const replied = later.some((m) => m.user === myId)
-            const reacted =
-              self?.reactions?.some((r) => r.users.includes(myId)) ?? false
-            if (replied || reacted) return undefined
-            const message = self
-              ? yield* fromRaw(self, yield* channelRef(match.channel.id))
-              : yield* fromMatch(match)
+                ? yield* scan(match.channel.id, match.ts)
+                : undefined
+            const later = [
+              ...around.messages,
+              ...(replies?.messages ?? []),
+            ].filter((m) => Number(m.ts) > Number(match.ts))
+            // A reply or reaction seen anywhere proves an answer, however much of the scan was cut off.
+            if (later.some((m) => m.user === myId)) return undefined
+            if (self?.reactions?.some((r) => r.users.includes(myId)))
+              return undefined
+            // Thread replies arrive oldest first, so a capped thread scan loses its newest replies. Channel history
+            // arrives newest first, so a capped channel scan still covers the mention if it reached back to it.
+            const aroundCovers =
+              !around.hasMore ||
+              (!threadTs &&
+                Number(around.messages[0]?.ts ?? Number.POSITIVE_INFINITY) <=
+                  Number(match.ts))
+            const covered = aroundCovers && !(replies?.hasMore ?? false)
             return {
-              via: [...via].sort() as ('direct' | 'group' | 'name')[],
-              ageHours: Math.round((now - Number(match.ts)) / 360) / 10,
-              message,
+              covered,
+              item: {
+                via: [...via].sort() as ('direct' | 'group' | 'name')[],
+                ageHours: Math.round((now - Number(match.ts)) / 360) / 10,
+                message: self
+                  ? yield* fromRaw(self, yield* channelRef(match.channel.id))
+                  : yield* fromMatch(match),
+              },
             }
           }),
         { concurrency: 3 },
       )
+      const open = classified.filter((c) => c !== undefined)
+      const undetermined = open.filter((c) => !c.covered).map((c) => c.item)
+      if (undetermined.length > 0) {
+        notes.push(
+          `${undetermined.length} mention(s) are undetermined: more than ${MENTION_SCAN_LIMIT} messages followed them in their thread or channel, and no reply or reaction from you was found in the part that was read.`,
+        )
+      }
 
       return {
         me: { id: myId, name: myName },
         searchedFor: queries.map((q) => q.query),
         checked: candidates.length,
-        unanswered: checked.filter((c) => c !== undefined),
+        unanswered: open.filter((c) => c.covered).map((c) => c.item),
+        undetermined,
         notes,
       }
     })
@@ -983,21 +998,7 @@ const make = Effect.gen(function* () {
         },
         PostMessage,
       )
-      const { permalink } = yield* api.call(
-        'chat.getPermalink',
-        { channel: posted.channel, message_ts: posted.ts },
-        Permalink,
-      )
-      return {
-        draftPermalink: permalink,
-        destination: isUser
-          ? { kind: 'dm' as const, userId: to }
-          : {
-              kind: 'channel' as const,
-              channelId: to,
-              ...(input.threadTs ? { threadTs: input.threadTs } : {}),
-            },
-      }
+      return { draftPermalink: permalinkFor(url, posted.channel, posted.ts) }
     })
 
   return {
@@ -1062,8 +1063,14 @@ const Locator = {
 }
 const Conversation = Schema.Struct({
   channel: ChannelRef,
-  threadTs: Schema.optional(Schema.String),
+  threadTs: Schema.optionalKey(Schema.String),
   messages: Schema.Array(Message),
+  complete: Schema.Boolean,
+})
+const Mention = Schema.Struct({
+  via: Schema.Array(Schema.Literals(['direct', 'group', 'name'])),
+  ageHours: Schema.Number,
+  message: Message,
 })
 
 const searchTips =
@@ -1157,7 +1164,7 @@ export const SlackToolkit = Toolkit.make(
   ),
   slackTool(
     'slack_my_activity',
-    'What you said on Slack since a day, with what it responded to. Returns one conversation per thread you posted in (the whole thread) and one per channel or DM where you posted top-level messages (the messages before your first one, then everything through your last one). Messages you wrote have fromMe: true. Use it to summarize your day or find commitments you made.',
+    `What you said on Slack since a day, with what it responded to. Returns one conversation per thread you posted in (the thread, up to ${ACTIVITY_READ_LIMIT} messages) and one per channel or DM where you posted top-level messages (the messages before your first one, then everything through your last one). Every message of yours that search found is included even past the cap; complete: false means other messages in that conversation were left out. Messages you wrote have fromMe: true. Use it to summarize your day or find commitments you made.`,
     Schema.Struct({
       since: Since,
       limit: Schema.optional(
@@ -1177,7 +1184,7 @@ export const SlackToolkit = Toolkit.make(
   ),
   slackTool(
     'slack_unanswered_mentions',
-    'Messages since a day that mention you and that you have neither replied after nor reacted to. A mention is an @-mention of you, of a user group you belong to (needs the usergroups:read scope; notes says when it was skipped), or your name as plain text. @here and @channel do not count. "Replied" means a later message from you in the same thread, or for a top-level message, a later message from you in that channel or DM or in its thread.',
+    `Messages since a day that mention you and that you have neither replied after nor reacted to. A mention is an @-mention of you, of a user group you belong to (needs the usergroups:read scope; notes says when it was skipped), or your name as plain text. @here and @channel do not count. "Replied" means a later message from you in the same thread, or for a top-level message, a later message from you in that channel or DM or in its thread. A mention followed by more than ${MENTION_SCAN_LIMIT} messages is listed under undetermined, not unanswered, unless a reply or reaction from you was found anyway.`,
     Schema.Struct({
       since: Since,
       minAgeHours: Schema.optional(
@@ -1201,13 +1208,8 @@ export const SlackToolkit = Toolkit.make(
       me: Me,
       searchedFor: Schema.Array(Schema.String),
       checked: Schema.Number,
-      unanswered: Schema.Array(
-        Schema.Struct({
-          via: Schema.Array(Schema.Literals(['direct', 'group', 'name'])),
-          ageHours: Schema.Number,
-          message: Message,
-        }),
-      ),
+      unanswered: Schema.Array(Mention),
+      undetermined: Schema.Array(Mention),
       notes: Schema.Array(Schema.String),
     }),
     'reads',
@@ -1230,17 +1232,7 @@ export const SlackToolkit = Toolkit.make(
         }),
       ),
     }),
-    Schema.Struct({
-      draftPermalink: Schema.String,
-      destination: Schema.Union([
-        Schema.Struct({ kind: Schema.Literal('dm'), userId: Schema.String }),
-        Schema.Struct({
-          kind: Schema.Literal('channel'),
-          channelId: Schema.String,
-          threadTs: Schema.optional(Schema.String),
-        }),
-      ]),
-    }),
+    Schema.Struct({ draftPermalink: Schema.String }),
     'adds',
   ),
 )

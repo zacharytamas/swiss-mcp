@@ -13,9 +13,27 @@ const stillOpen = ts(20, 2)
 const reacted = ts(10, 3)
 const tooRecent = ts(1, 4)
 const groupOnly = ts(15, 5)
+// Over the scan cap: my reply to `buriedRoot` is reply 1100 of 1200, past what is read; my reply to `earlyRoot` is
+// reply 5. `floodedMention` is a top-level mention with 1100 later top-level messages after it.
+const buriedRoot = ts(40, 7)
+const earlyRoot = ts(41, 8)
+const floodedMention = ts(50, 9)
+// My activity: my message is reply 240 of a 250-message thread, past the 200-message activity cap.
+const longThread = ts(45, 10)
+const myLateReply = `${now - 44 * HOUR}.${String(500240)}`
 
 type Raw = Record<string, unknown>
-const replies: Record<string, Raw[]> = {
+const reply = (root: string, i: number, user = 'UANN'): Raw => ({
+  ts: `${root.split('.')[0]}.${String(200000 + i)}`,
+  thread_ts: root,
+  user,
+  text: `reply ${i}`,
+})
+const longReplies = (root: string, count: number, mineAt: number) =>
+  Array.from({ length: count }, (_, i) =>
+    reply(root, i + 1, i + 1 === mineAt ? ME : 'UANN'),
+  )
+const threads: Record<string, Raw[]> = {
   [repliedRoot]: [
     {
       ts: repliedRoot,
@@ -25,25 +43,93 @@ const replies: Record<string, Raw[]> = {
     },
     { ts: ts(29, 6), thread_ts: repliedRoot, user: ME, text: 'on it' },
   ],
+  [buriedRoot]: [
+    {
+      ts: buriedRoot,
+      thread_ts: buriedRoot,
+      user: 'UANN',
+      text: '<@UME> big one',
+      reply_count: 1200,
+    },
+    ...longReplies(buriedRoot, 1200, 1100),
+  ],
+  [earlyRoot]: [
+    {
+      ts: earlyRoot,
+      thread_ts: earlyRoot,
+      user: 'UANN',
+      text: '<@UME> early',
+      reply_count: 1200,
+    },
+    ...longReplies(earlyRoot, 1200, 5),
+  ],
+  [longThread]: [
+    {
+      ts: longThread,
+      thread_ts: longThread,
+      user: 'UANN',
+      text: 'long thread',
+    },
+    ...Array.from({ length: 250 }, (_, i) =>
+      i + 1 === 240
+        ? {
+            ts: myLateReply,
+            thread_ts: longThread,
+            user: ME,
+            text: 'I will ship it Friday',
+          }
+        : reply(longThread, i + 1),
+    ),
+  ],
 }
-const history: Raw[] = [
-  { ts: stillOpen, user: 'UBOB', text: 'Zach, did the deploy land?' },
-  {
-    ts: reacted,
-    user: 'UANN',
-    text: '<@UME> fyi',
-    reactions: [{ name: 'eyes', users: [ME] }],
-  },
-  { ts: tooRecent, user: 'UANN', text: '<@UME> quick one' },
-  { ts: groupOnly, user: 'UBOB', text: '<!subteam^SENG|@eng> review please' },
-]
-const match = (m: Raw, thread?: string) => ({
+const channels: Record<string, Raw[]> = {
+  CGEN: [
+    { ts: stillOpen, user: 'UBOB', text: 'Zach, did the deploy land?' },
+    {
+      ts: reacted,
+      user: 'UANN',
+      text: '<@UME> fyi',
+      reactions: [{ name: 'eyes', users: [ME] }],
+    },
+    { ts: tooRecent, user: 'UANN', text: '<@UME> quick one' },
+    { ts: groupOnly, user: 'UBOB', text: '<!subteam^SENG|@eng> review please' },
+  ],
+  CBIG: [threads[buriedRoot]?.[0] ?? {}, threads[earlyRoot]?.[0] ?? {}],
+  CFLOOD: [
+    { ts: floodedMention, user: 'UANN', text: '<@UME> flooded' },
+    ...Array.from({ length: 1100 }, (_, i) => ({
+      ts: `${now - 49 * HOUR}.${String(300000 + i)}`,
+      user: 'UBOB',
+      text: `chatter ${i}`,
+    })),
+  ],
+}
+const match = (channel: string, m: Raw, thread?: string) => ({
   ts: m.ts,
   user: m.user,
   text: m.text,
-  permalink: `https://acme.slack.com/archives/CGEN/p${String(m.ts).replace('.', '')}${thread ? `?thread_ts=${thread}` : ''}`,
-  channel: { id: 'CGEN', name: 'general' },
+  permalink: `https://acme.slack.com/archives/${channel}/p${String(m.ts).replace('.', '')}${thread ? `?thread_ts=${thread}` : ''}`,
+  channel: { id: channel, name: channel.toLowerCase() },
 })
+
+// Pages like Slack: honours limit, cursor and an inclusive oldest/latest window; `order` is Slack's for the method.
+const page = (messages: Raw[], p: URLSearchParams, order: 'asc' | 'desc') => {
+  const oldest = Number(p.get('oldest') ?? 0)
+  const latest = Number(p.get('latest') ?? Number.POSITIVE_INFINITY)
+  const inRange = messages
+    .filter((m) => Number(m.ts) >= oldest && Number(m.ts) <= latest)
+    .sort((a, b) => (Number(a.ts) - Number(b.ts)) * (order === 'asc' ? 1 : -1))
+  const offset = Number(p.get('cursor') ?? 0)
+  const limit = Number(p.get('limit') ?? 100)
+  const next = offset + limit
+  return {
+    messages: inRange.slice(offset, next),
+    has_more: next < inRange.length,
+    response_metadata: {
+      next_cursor: next < inRange.length ? String(next) : '',
+    },
+  }
+}
 
 const posted: Raw[] = []
 let server: Bun.Server<undefined>
@@ -64,27 +150,46 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
       { id: 'SOPS', handle: 'ops', name: 'Ops', users: ['UBOB'] },
     ],
   }),
-  'conversations.info': () => ({ channel: { id: 'CGEN', name: 'general' } }),
+  'conversations.info': (p) => ({
+    channel: {
+      id: p.get('channel'),
+      name: String(p.get('channel')).toLowerCase(),
+    },
+  }),
   'search.messages': (p) => {
     const q = String(p.get('query'))
-    const matches = q.startsWith('<@UME>')
+    const cgen = channels.CGEN ?? []
+    const matches = q.startsWith('from:<@UME>')
       ? [
-          match(replies[repliedRoot]?.[0] ?? {}, repliedRoot),
-          match(history[1] ?? {}),
-          match(history[2] ?? {}),
+          match(
+            'CBIG',
+            { ts: myLateReply, user: ME, text: 'I will ship it Friday' },
+            longThread,
+          ),
         ]
-      : q.startsWith('<!subteam^SENG>')
-        ? [match(history[3] ?? {})]
-        : q.startsWith('"Zach"')
-          ? [match(history[0] ?? {})]
-          : []
+      : q.startsWith('<@UME>')
+        ? [
+            match('CGEN', threads[repliedRoot]?.[0] ?? {}, repliedRoot),
+            match('CGEN', cgen[1] ?? {}),
+            match('CGEN', cgen[2] ?? {}),
+          ]
+        : q.startsWith('<!subteam^SENG>')
+          ? [match('CGEN', cgen[3] ?? {})]
+          : q.startsWith('"Zach"')
+            ? [match('CGEN', cgen[0] ?? {})]
+            : q.startsWith('"Big"')
+              ? [
+                  match('CBIG', threads[buriedRoot]?.[0] ?? {}),
+                  match('CBIG', threads[earlyRoot]?.[0] ?? {}),
+                  match('CFLOOD', channels.CFLOOD?.[0] ?? {}),
+                ]
+              : []
     return { messages: { total: matches.length, matches } }
   },
-  'conversations.replies': (p) => ({
-    messages: replies[String(p.get('ts'))] ?? [],
-    has_more: false,
-  }),
-  'conversations.history': () => ({ messages: history, has_more: false }),
+  'conversations.replies': (p) =>
+    page(threads[String(p.get('ts'))] ?? [], p, 'asc'),
+  'conversations.history': (p) =>
+    page(channels[String(p.get('channel'))] ?? [], p, 'desc'),
   'conversations.list': () => ({
     channels: [
       { id: 'DOTHER', user: 'UANN' },
@@ -95,9 +200,6 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
     posted.push(Object.fromEntries(p))
     return { channel: p.get('channel'), ts: '1700000000.000100' }
   },
-  'chat.getPermalink': () => ({
-    permalink: 'https://acme.slack.com/archives/DSELF/p1700000000000100',
-  }),
 }
 
 beforeAll(() => {
@@ -202,6 +304,53 @@ describe('slack_unanswered_mentions', () => {
       ],
     })
   })
+
+  test('a mention whose scan hit the cap is undetermined unless a reply from me was found anyway', async () => {
+    const result = await callTool('slack_unanswered_mentions', {
+      since: '2000-01-01',
+      minAgeHours: 2,
+      names: ['Big'],
+    })
+
+    const tsOf = (items: { message: { ts: string } }[]) =>
+      items.map((u) => u.message.ts)
+    expect({
+      unanswered: tsOf(result.structuredContent.unanswered),
+      undetermined: tsOf(result.structuredContent.undetermined),
+      notes: result.structuredContent.notes,
+    }).toEqual({
+      // The user-group search still runs; only the capped scans are under test here.
+      unanswered: [groupOnly],
+      undetermined: [buriedRoot, floodedMention],
+      notes: [
+        '2 mention(s) are undetermined: more than 1000 messages followed them in their thread or channel, and no reply or reaction from you was found in the part that was read.',
+      ],
+    })
+  })
+})
+
+describe('slack_my_activity', () => {
+  test('keeps my message from a thread longer than the read cap and marks the thread incomplete', async () => {
+    const result = await callTool('slack_my_activity', { since: '2000-01-01' })
+
+    const [conversation, ...rest] = result.structuredContent.conversations
+    const mine = conversation.messages.filter(
+      (m: { fromMe: boolean }) => m.fromMe,
+    )
+    expect({
+      others: rest.length,
+      threadTs: conversation.threadTs,
+      complete: conversation.complete,
+      count: conversation.messages.length,
+      mine: mine.map((m: { ts: string; text: string }) => [m.ts, m.text]),
+    }).toEqual({
+      others: 0,
+      threadTs: longThread,
+      complete: false,
+      count: 201,
+      mine: [[myLateReply, 'I will ship it Friday']],
+    })
+  })
 })
 
 describe('slack_draft_to_self', () => {
@@ -214,7 +363,6 @@ describe('slack_draft_to_self', () => {
 
     expect(result.structuredContent).toEqual({
       draftPermalink: 'https://acme.slack.com/archives/DSELF/p1700000000000100',
-      destination: { kind: 'channel', channelId: 'CGEN' },
     })
     expect(posted).toEqual([
       {
