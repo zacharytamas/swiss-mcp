@@ -252,6 +252,26 @@ const attachmentMatch = {
   username: 'jira',
   attachments: [{ fallback: 'PROJ-1 created: Fix login' }],
 }
+// Attachments that carry their content in Block Kit blocks or in legacy fields instead of text.
+const structuredAttachmentMatch = {
+  ...match('CGEN', { ts: ts(2, 15), user: null, text: '' }),
+  username: 'jira',
+  attachments: [
+    {
+      title: 'PROJ-2',
+      fields: [
+        { title: 'Status', value: 'In Progress' },
+        { title: 'Assignee', value: '<@UME>' },
+      ],
+      fallback: 'PROJ-2 updated',
+    },
+    {
+      blocks: [
+        { type: 'section', text: { type: 'mrkdwn', text: 'Deploy *done*' } },
+      ],
+    },
+  ],
+}
 
 // Pages like Slack: honours limit, cursor and an inclusive oldest/latest window; `order` is Slack's for the method.
 const page = (messages: Raw[], p: URLSearchParams, order: 'asc' | 'desc') => {
@@ -367,7 +387,9 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
                     ? [integrationMatch]
                     : q.startsWith('"Jira"')
                       ? [attachmentMatch]
-                      : []
+                      : q.startsWith('"PROJ-2"')
+                        ? [structuredAttachmentMatch]
+                        : []
     const count = Number(p.get('count') ?? 20)
     const start = (Number(p.get('page') ?? 1) - 1) * count
     return {
@@ -654,6 +676,16 @@ describe('messages whose content is outside text', () => {
 
     expect(result.structuredContent.messages[0].text).toBe(
       'PROJ-1 created: Fix login',
+    )
+  })
+
+  test('an attachment shows its fields and its blocks', async () => {
+    const result = await callTool('slack_search_messages', {
+      query: '"PROJ-2"',
+    })
+
+    expect(result.structuredContent.messages[0].text).toBe(
+      'PROJ-2\nStatus: In Progress\nAssignee: @Zach Tamas\nDeploy *done*',
     )
   })
 })

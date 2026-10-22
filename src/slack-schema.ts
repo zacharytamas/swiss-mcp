@@ -44,14 +44,24 @@ const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
   name: Schema.optional(Schema.String),
   fallback: Schema.optional(Schema.String),
 })
+const Blocks = Loose(Schema.Array(RawBlock))
 const Content = {
-  blocks: Loose(Schema.Array(RawBlock)),
+  blocks: Blocks,
   attachments: Loose(
     Schema.Array(
       Schema.Struct({
         pretext: Maybe(Schema.String),
         title: Maybe(Schema.String),
         text: Maybe(Schema.String),
+        fields: Loose(
+          Schema.Array(
+            Schema.Struct({
+              title: Maybe(Schema.String),
+              value: Maybe(Schema.String),
+            }),
+          ),
+        ),
+        blocks: Blocks,
         fallback: Maybe(Schema.String),
       }),
     ),

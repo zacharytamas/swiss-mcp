@@ -258,6 +258,9 @@ const blockText = new Map<string, (b: RawBlock) => string | undefined>([
   ['rich_text', richText],
 ])
 
+const blocksText = (blocks: ReadonlyArray<RawBlock> | null | undefined) =>
+  (blocks ?? []).map((b) => blockText.get(b.type)?.(b))
+
 // A message's text in Slack markup. Integrations and uploads often leave `text` empty and put the content in blocks,
 // attachments or files, so those stand in only when `text` is empty.
 const markupOf = (
@@ -265,10 +268,20 @@ const markupOf = (
 ) =>
   m.text ||
   [
-    ...(m.blocks ?? []).map((b) => blockText.get(b.type)?.(b)),
+    ...blocksText(m.blocks),
     ...(m.attachments ?? []).map(
       (a) =>
-        [a.pretext, a.title, a.text].filter(Boolean).join('\n') || a.fallback,
+        [
+          a.pretext,
+          a.title,
+          a.text,
+          ...(a.fields ?? []).map((f) =>
+            [f.title, f.value].filter(Boolean).join(': '),
+          ),
+          ...blocksText(a.blocks),
+        ]
+          .filter(Boolean)
+          .join('\n') || a.fallback,
     ),
     ...(m.files ?? []).map(
       (f) =>
