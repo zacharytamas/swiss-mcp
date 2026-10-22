@@ -10,12 +10,16 @@ const Loose = <S extends Schema.Top>(s: S) =>
     Schema.NullishOr(s).pipe(Schema.catchDecoding(() => Effect.succeedNone)),
   )
 
-const TextObject = Schema.Struct({ text: Schema.String })
+const TextObject = Schema.Struct({
+  type: Schema.optional(Schema.String),
+  text: Schema.String,
+})
+type TextObject = typeof TextObject.Type
 
 export interface RawBlock {
   readonly type: string
-  readonly text?: string | { readonly text: string } | undefined
-  readonly fields?: ReadonlyArray<{ readonly text: string }> | undefined
+  readonly text?: string | TextObject | undefined
+  readonly fields?: ReadonlyArray<TextObject> | undefined
   readonly elements?: ReadonlyArray<RawBlock> | undefined
   readonly url?: string | undefined
   readonly user_id?: string | undefined

@@ -194,21 +194,26 @@ const kindOf = (c: {
 }): ChannelRef['kind'] =>
   c.is_im ? 'dm' : c.is_mpim ? 'group_dm' : c.is_private ? 'private' : 'channel'
 
-const textOf = (t: RawBlock['text']) => (typeof t === 'string' ? t : t?.text)
-
-// Rich text holds plain text, so it is escaped the way Slack escapes `text` before `render` unescapes it.
 const escapeText = (s: string) =>
   s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 
+// Slack parses markup only in `mrkdwn` text objects. `plain_text` and rich text strings are literal, so they are
+// escaped the way Slack escapes `text`, and `render` unescapes them without reading them as references.
+const textOf = (t: RawBlock['text']) => {
+  if (t === undefined) return undefined
+  if (typeof t === 'string') return escapeText(t)
+  return t.type === 'mrkdwn' ? t.text : escapeText(t.text)
+}
+
 // Inline rich text elements, rewritten into the <…> markup `render` already resolves in `text`.
 const inline = new Map<string, (e: RawBlock) => string>([
-  ['text', (e) => escapeText(textOf(e.text) ?? '')],
+  ['text', (e) => textOf(e.text) ?? ''],
   [
     'link',
     (e) => {
       const label = textOf(e.text)
-      if (!e.url) return escapeText(label ?? '')
-      return label ? `<${e.url}|${escapeText(label)}>` : `<${e.url}>`
+      if (!e.url) return label ?? ''
+      return label ? `<${e.url}|${label}>` : `<${e.url}>`
     },
   ],
   ['user', (e) => `<@${e.user_id}>`],
@@ -234,7 +239,7 @@ const blockText = new Map<string, (b: RawBlock) => string | undefined>([
   [
     'section',
     (b) =>
-      [textOf(b.text), ...(b.fields ?? []).map((f) => f.text)]
+      [textOf(b.text), ...(b.fields ?? []).map(textOf)]
         .filter(Boolean)
         .join('\n'),
   ],
@@ -242,7 +247,11 @@ const blockText = new Map<string, (b: RawBlock) => string | undefined>([
     'context',
     (b) =>
       (b.elements ?? [])
-        .map((e) => textOf(e.text))
+        .map((e) =>
+          typeof e.text === 'string'
+            ? textOf({ type: e.type, text: e.text })
+            : undefined,
+        )
         .filter(Boolean)
         .join(' '),
   ],

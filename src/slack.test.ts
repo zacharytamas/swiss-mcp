@@ -194,6 +194,23 @@ const channels: Record<string, Raw[]> = {
         { type: '__proto__' },
       ],
     },
+    {
+      ts: ts(3, 18),
+      user: null,
+      username: 'deploy bot',
+      text: '',
+      blocks: [
+        { type: 'header', text: { type: 'plain_text', text: 'Ping <@UME>' } },
+        {
+          type: 'section',
+          fields: [{ type: 'plain_text', text: 'a & b <#CGEN>' }],
+        },
+        {
+          type: 'context',
+          elements: [{ type: 'mrkdwn', text: 'by <@UME>' }],
+        },
+      ],
+    },
   ],
   CBUSY: [],
 }
@@ -623,6 +640,12 @@ describe('messages whose content is outside text', () => {
   test('an empty-text rich text post resolves mentions and links, keeps its lines, and skips what it cannot read', async () => {
     expect(await textAt(ts(3, 17))).toBe(
       'Shipped, thanks @Zach Tamas in [Build | Deploy](https://ci.example.com) (details)\n#cgen',
+    )
+  })
+
+  test('plain_text in header, fields and context stays literal while mrkdwn resolves', async () => {
+    expect(await textAt(ts(3, 18))).toBe(
+      'Ping <@UME>\na & b <#CGEN>\nby @Zach Tamas',
     )
   })
 
