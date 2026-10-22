@@ -241,6 +241,22 @@ const channels: Record<string, Raw[]> = {
         },
       ],
     },
+    {
+      ts: ts(3, 20),
+      user: null,
+      username: 'github status',
+      text: '',
+      blocks: [
+        {
+          type: 'context',
+          elements: [
+            { type: 'image', alt_text: 'degraded_performance' },
+            { type: 'mrkdwn', text: 'API Requests' },
+          ],
+        },
+        { type: 'image', alt_text: 'Chart <1h>' },
+      ],
+    },
   ],
   CBUSY: [],
 }
@@ -724,6 +740,12 @@ describe('messages whose content is outside text', () => {
   test('a markdown block and rich text dates are readable', async () => {
     expect(await textAt(ts(3, 19))).toBe(
       '**Release** notes\nDue Nov 14, 2023, starts 2023-11-14T22:13:20.000Z, ends never',
+    )
+  })
+
+  test('images show their alt text, in context and as blocks', async () => {
+    expect(await textAt(ts(3, 20))).toBe(
+      '[image: degraded_performance] API Requests\n[image: Chart <1h>]',
     )
   })
 })

@@ -240,7 +240,10 @@ const richText = (e: RawBlock): string =>
     .map(richText)
     .join(INLINE_CONTAINERS.has(e.type) ? '' : '\n')
 
-// Block types that carry readable text. Others (actions, image, divider, input) hold controls or nothing to read.
+const image = (e: RawBlock) =>
+  e.alt_text ? `[image: ${escapeText(e.alt_text)}]` : undefined
+
+// Block types that carry readable text. Others (actions, divider, input) hold controls or nothing to read.
 const blockText = new Map<string, (b: RawBlock) => string | undefined>([
   ['header', (b) => textOf(b.text)],
   ['markdown', (b) => textOf(b.text)],
@@ -256,13 +259,16 @@ const blockText = new Map<string, (b: RawBlock) => string | undefined>([
     (b) =>
       (b.elements ?? [])
         .map((e) =>
-          typeof e.text === 'string'
-            ? textOf({ type: e.type, text: e.text })
-            : undefined,
+          e.type === 'image'
+            ? image(e)
+            : typeof e.text === 'string'
+              ? textOf({ type: e.type, text: e.text })
+              : undefined,
         )
         .filter(Boolean)
         .join(' '),
   ],
+  ['image', image],
   ['rich_text', richText],
 ])
 

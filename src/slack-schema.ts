@@ -29,6 +29,7 @@ export interface RawBlock {
   readonly name?: string | undefined
   readonly fallback?: string | undefined
   readonly timestamp?: number | undefined
+  readonly alt_text?: string | undefined
 }
 const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
   type: Schema.String,
@@ -45,6 +46,7 @@ const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
   name: Schema.optional(Schema.String),
   fallback: Schema.optional(Schema.String),
   timestamp: Schema.optional(Schema.Number),
+  alt_text: Schema.optional(Schema.String),
 })
 const Blocks = Loose(Schema.Array(RawBlock))
 const Content = {
