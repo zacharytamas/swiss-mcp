@@ -32,6 +32,12 @@ import {
   PostMessage,
   type RawMessage,
   type RawSearchMatch,
+  Reaction,
+  ReactionChange,
+  ReactionEdit,
+  ReactionsGet,
+  ReactionsList,
+  ReactionTarget,
   SearchMessages,
   Since,
   ToolFailure,
@@ -868,6 +874,93 @@ const make = Effect.gen(function* () {
       return { draftPermalink: permalinkFor(url, posted.channel, posted.ts) }
     })
 
+  const messageAt = (p: typeof ReactionTarget.Type) =>
+    Effect.gen(function* () {
+      const t = yield* target(p)
+      if (!t.ts) {
+        return yield* new SlackInputInvalid({
+          message: 'Pass a permalink, or channel together with ts.',
+        })
+      }
+      return { channel: t.channel, timestamp: t.ts }
+    })
+
+  const reactions = (p: Parameters<typeof messageAt>[0]) =>
+    Effect.gen(function* () {
+      const at = yield* messageAt(p)
+      const { message } = yield* api.call(
+        'reactions.get',
+        { ...at, full: true },
+        ReactionsGet,
+      )
+      const { id: myId } = yield* me
+      return {
+        message: yield* fromRaw(message, yield* channelRef(at.channel)),
+        reactions: yield* Effect.forEach(message.reactions ?? [], (r) =>
+          Effect.gen(function* () {
+            return {
+              name: r.name,
+              count: r.count ?? r.users.length,
+              byMe: r.users.includes(myId),
+              users: yield* Effect.forEach(r.users, (id) =>
+                Effect.map(userName(id), (name) => ({ id, name })),
+              ),
+            }
+          }),
+        ),
+      }
+    })
+
+  const myReactions = (limit: number) =>
+    Effect.gen(function* () {
+      const out: Message[] = []
+      let cursor: string | undefined
+      do {
+        const res = yield* api.call(
+          'reactions.list',
+          { limit: Math.min(limit, 100), cursor },
+          ReactionsList,
+        )
+        for (const item of res.items) {
+          if (out.length >= limit) break
+          if (item.type !== 'message' || !item.channel || !item.message) {
+            continue
+          }
+          out.push(
+            yield* fromRaw(item.message, yield* channelRef(item.channel)),
+          )
+        }
+        cursor = res.response_metadata?.next_cursor || undefined
+      } while (cursor && out.length < limit)
+      return { messages: out }
+    })
+
+  // Adding a reaction you already left, or removing one you never left, is the end state the caller asked for.
+  const react = (
+    method: 'reactions.add' | 'reactions.remove',
+    p: Parameters<typeof messageAt>[0] & { readonly name: string },
+  ) =>
+    Effect.gen(function* () {
+      const at = yield* messageAt(p)
+      const name = p.name.replace(/^:|:$/g, '')
+      const changed = yield* api
+        .call(method, { ...at, name }, Schema.Struct({}))
+        .pipe(
+          Effect.as(true),
+          Effect.catchTag('SlackApiError', (e) =>
+            e.code === 'already_reacted' || e.code === 'no_reaction'
+              ? Effect.succeed(false)
+              : Effect.fail(e),
+          ),
+        )
+      const { url } = yield* me
+      return {
+        name,
+        changed,
+        permalink: permalinkFor(url, at.channel, at.timestamp),
+      }
+    })
+
   return {
     search,
     fromMatch,
@@ -878,6 +971,9 @@ const make = Effect.gen(function* () {
     myActivity,
     unansweredMentions,
     draftToSelf,
+    reactions,
+    myReactions,
+    react,
   }
 })
 
@@ -890,7 +986,7 @@ const slackTool = <
   description: string,
   parameters: P,
   success: S,
-  effect: 'reads' | 'adds',
+  effect: 'reads' | 'adds' | 'removes',
 ) =>
   Tool.make(name, {
     description,
@@ -901,7 +997,7 @@ const slackTool = <
   })
     .annotate(Tool.Strict, true)
     .annotate(Tool.Readonly, effect === 'reads')
-    .annotate(Tool.Destructive, false)
+    .annotate(Tool.Destructive, effect === 'removes')
     .annotate(Tool.OpenWorld, true)
 
 const searchTips =
@@ -1067,6 +1163,40 @@ export const SlackToolkit = Toolkit.make(
     Schema.Struct({ draftPermalink: Schema.String }),
     'adds',
   ),
+  slackTool(
+    'slack_get_reactions',
+    'Reactions on one message: each emoji with its count, whether you left it, and who reacted (resolved to names). Pass the permalink, or channel plus ts. The message itself comes back too.',
+    ReactionTarget,
+    Schema.Struct({ message: Message, reactions: Schema.Array(Reaction) }),
+    'reads',
+  ),
+  slackTool(
+    'slack_list_my_reactions',
+    'Messages you reacted to, most recently reacted first. Each message lists its reactions; byMe marks yours. Files and file comments you reacted to are left out.',
+    Schema.Struct({
+      limit: Schema.optional(
+        Count(500).annotate({ description: 'Default 20.' }),
+      ),
+    }),
+    Schema.Struct({ messages: Schema.Array(Message) }),
+    'reads',
+  ),
+  slackTool(
+    'slack_add_reaction',
+    'Add your emoji reaction to a message. Pass the permalink, or channel plus ts. changed: false means you had already left that reaction.',
+    ReactionEdit(
+      '"thumbsup", "eyes", or a custom emoji; a skin tone is "thumbsup::skin-tone-2"',
+    ),
+    ReactionChange,
+    'adds',
+  ),
+  slackTool(
+    'slack_remove_reaction',
+    'Remove your emoji reaction from a message. Pass the permalink, or channel plus ts. changed: false means you had not left that reaction. Only your own reactions can be removed.',
+    ReactionEdit('"thumbsup"'),
+    ReactionChange,
+    'removes',
+  ),
 )
 
 export const SlackToolkitLive = SlackToolkit.toLayer(
@@ -1129,6 +1259,13 @@ export const SlackToolkitLive = SlackToolkit.toLayer(
           })
           .pipe(toFailure),
       slack_draft_to_self: (p) => slack.draftToSelf(p).pipe(toFailure),
+      slack_get_reactions: (p) => slack.reactions(p).pipe(toFailure),
+      slack_list_my_reactions: (p) =>
+        slack.myReactions(p.limit ?? 20).pipe(toFailure),
+      slack_add_reaction: (p) =>
+        slack.react('reactions.add', p).pipe(toFailure),
+      slack_remove_reaction: (p) =>
+        slack.react('reactions.remove', p).pipe(toFailure),
     }
   }),
 )
