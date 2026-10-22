@@ -133,6 +133,16 @@ const dmMatch = {
   permalink: `https://acme.slack.com/archives/DBOB/p${ts(3, 12).replace('.', '')}`,
   channel: { id: 'DBOB', name: 'UBOB' },
 }
+// An integration post the way Slack sends it: `user: null`, the integration's name in `username`.
+const integrationMatch = {
+  ts: ts(2, 12),
+  type: 'message',
+  user: null,
+  username: 'freshdesk alerts',
+  text: 'Ticket 42 escalated',
+  permalink: `https://acme.slack.com/archives/CGEN/p${ts(2, 12).replace('.', '')}`,
+  channel: { id: 'CGEN', name: 'cgen' },
+}
 
 // Pages like Slack: honours limit, cursor and an inclusive oldest/latest window; `order` is Slack's for the method.
 const page = (messages: Raw[], p: URLSearchParams, order: 'asc' | 'desc') => {
@@ -215,7 +225,9 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
                 ? busyMatches
                 : q.startsWith('"Dm only"')
                   ? [dmMatch]
-                  : []
+                  : q.startsWith('"Ticket"')
+                    ? [dmMatch, integrationMatch]
+                    : []
     const count = Number(p.get('count') ?? 20)
     const start = (Number(p.get('page') ?? 1) - 1) * count
     return {
@@ -535,6 +547,17 @@ test('slack_search_messages recognizes a DM by the match type and names it after
     name: '@Someone',
     kind: 'dm',
   })
+})
+
+test('slack_search_messages names an integration post with a null user after its username', async () => {
+  const result = await callTool('slack_search_messages', { query: '"Ticket"' })
+
+  expect(
+    result.structuredContent.messages.map((m: { author: unknown }) => m.author),
+  ).toEqual([
+    { id: 'UBOB', name: 'Someone' },
+    { id: '', name: 'freshdesk alerts' },
+  ])
 })
 
 test('slack_resolve lists an unknown ID as unresolved but fails the call on a token error', async () => {
