@@ -108,6 +108,93 @@ const channels: Record<string, Raw[]> = {
   CBOT: [
     { ts: ts(2, 13), user: null, username: 'pipedream', text: 'Run failed' },
   ],
+  // Content only in blocks, attachments or files, the way integrations and uploads post it.
+  CBLOCKS: [
+    {
+      ts: ts(3, 14),
+      user: null,
+      username: 'github status',
+      text: '',
+      blocks: [
+        { type: 'header', text: { type: 'plain_text', text: 'Incident' } },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: 'Degraded <https://githubstatus.com|Actions>',
+          },
+        },
+        {
+          type: 'actions',
+          elements: [
+            { type: 'button', text: { type: 'plain_text', text: 'Subscribe' } },
+          ],
+        },
+      ],
+    },
+    {
+      ts: ts(3, 15),
+      user: 'UBOB',
+      text: '',
+      files: [{ name: 'party.gif', mimetype: 'image/gif' }],
+    },
+    {
+      ts: ts(3, 16),
+      user: 'UANN',
+      text: 'Hello <@UME>',
+      blocks: [
+        {
+          type: 'rich_text',
+          elements: [
+            {
+              type: 'rich_text_section',
+              elements: [
+                { type: 'text', text: 'Hello ' },
+                { type: 'user', user_id: 'UME' },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      ts: ts(3, 17),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'rich_text',
+          elements: [
+            {
+              type: 'rich_text_section',
+              elements: [
+                { type: 'text', text: 'Shipped, thanks ' },
+                { type: 'user', user_id: 'UME' },
+                { type: 'text', text: ' in ' },
+                {
+                  type: 'link',
+                  url: 'https://ci.example.com',
+                  text: 'Build | Deploy',
+                },
+                { type: 'link', text: ' (details)' },
+                { type: 'toString' },
+              ],
+            },
+            {
+              type: 'rich_text_list',
+              elements: [
+                {
+                  type: 'rich_text_section',
+                  elements: [{ type: 'channel', channel_id: 'CGEN' }],
+                },
+              ],
+            },
+          ],
+        },
+        { type: '__proto__' },
+      ],
+    },
+  ],
   CBUSY: [],
 }
 // 150 mentions from the last hour, newest first, then one from a day ago: more fresh ones than any limit.
@@ -141,6 +228,12 @@ const dmMatch = {
 const integrationMatch = {
   ...match('CGEN', { ts: ts(2, 12), user: null, text: 'Ticket 42 escalated' }),
   username: 'freshdesk alerts',
+}
+// A Jira-style integration post: empty text, content only in an attachment's fallback.
+const attachmentMatch = {
+  ...match('CGEN', { ts: ts(2, 14), user: null, text: '' }),
+  username: 'jira',
+  attachments: [{ fallback: 'PROJ-1 created: Fix login' }],
 }
 
 // Pages like Slack: honours limit, cursor and an inclusive oldest/latest window; `order` is Slack's for the method.
@@ -255,7 +348,9 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
                   ? [dmMatch]
                   : q.startsWith('"Ticket"')
                     ? [integrationMatch]
-                    : []
+                    : q.startsWith('"Jira"')
+                      ? [attachmentMatch]
+                      : []
     const count = Number(p.get('count') ?? 20)
     const start = (Number(p.get('page') ?? 1) - 1) * count
     return {
@@ -500,6 +595,43 @@ test('slack_read_channel names an integration post with a null user after its us
   expect(result.structuredContent.messages[0].author).toEqual({
     id: '',
     name: 'pipedream',
+  })
+})
+
+describe('messages whose content is outside text', () => {
+  const textAt = async (at: string) => {
+    const result = await callTool('slack_read_channel', { channel: 'CBLOCKS' })
+    return result.structuredContent.messages.find(
+      (m: { ts: string }) => m.ts === at,
+    ).text
+  }
+
+  test('an empty-text post shows its header and section blocks, links resolved, and no button labels', async () => {
+    expect(await textAt(ts(3, 14))).toBe(
+      'Incident\nDegraded [Actions](https://githubstatus.com)',
+    )
+  })
+
+  test('a file-only post shows a placeholder naming the file', async () => {
+    expect(await textAt(ts(3, 15))).toBe('[image: party.gif]')
+  })
+
+  test('a post with text keeps its text and does not repeat its blocks', async () => {
+    expect(await textAt(ts(3, 16))).toBe('Hello @Zach Tamas')
+  })
+
+  test('an empty-text rich text post resolves mentions and links, keeps its lines, and skips what it cannot read', async () => {
+    expect(await textAt(ts(3, 17))).toBe(
+      'Shipped, thanks @Zach Tamas in [Build | Deploy](https://ci.example.com) (details)\n#cgen',
+    )
+  })
+
+  test('an empty-text search match uses its attachment fallback', async () => {
+    const result = await callTool('slack_search_messages', { query: '"Jira"' })
+
+    expect(result.structuredContent.messages[0].text).toBe(
+      'PROJ-1 created: Fix login',
+    )
   })
 })
 

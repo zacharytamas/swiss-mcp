@@ -1,8 +1,67 @@
-import { Schema } from 'effect'
+import { Effect, Schema } from 'effect'
 
 // Slack may send null for a field it has no value for: user fields on Slack Connect users, `user` on integration posts.
 const Maybe = <S extends Schema.Top>(s: S) =>
   Schema.optional(Schema.NullishOr(s))
+
+// Content Slack keeps outside `text`. A shape this doesn't expect reads as absent instead of failing the whole page.
+const Loose = <S extends Schema.Top>(s: S) =>
+  Schema.optional(
+    Schema.NullishOr(s).pipe(Schema.catchDecoding(() => Effect.succeedNone)),
+  )
+
+const TextObject = Schema.Struct({ text: Schema.String })
+
+export interface RawBlock {
+  readonly type: string
+  readonly text?: string | { readonly text: string } | undefined
+  readonly fields?: ReadonlyArray<{ readonly text: string }> | undefined
+  readonly elements?: ReadonlyArray<RawBlock> | undefined
+  readonly url?: string | undefined
+  readonly user_id?: string | undefined
+  readonly channel_id?: string | undefined
+  readonly usergroup_id?: string | undefined
+  readonly range?: string | undefined
+  readonly name?: string | undefined
+  readonly fallback?: string | undefined
+}
+const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
+  type: Schema.String,
+  text: Schema.optional(Schema.Union([Schema.String, TextObject])),
+  fields: Schema.optional(Schema.Array(TextObject)),
+  elements: Schema.optional(
+    Schema.Array(Schema.suspend((): Schema.Codec<RawBlock> => RawBlock)),
+  ),
+  url: Schema.optional(Schema.String),
+  user_id: Schema.optional(Schema.String),
+  channel_id: Schema.optional(Schema.String),
+  usergroup_id: Schema.optional(Schema.String),
+  range: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.String),
+  fallback: Schema.optional(Schema.String),
+})
+const Content = {
+  blocks: Loose(Schema.Array(RawBlock)),
+  attachments: Loose(
+    Schema.Array(
+      Schema.Struct({
+        pretext: Maybe(Schema.String),
+        title: Maybe(Schema.String),
+        text: Maybe(Schema.String),
+        fallback: Maybe(Schema.String),
+      }),
+    ),
+  ),
+  files: Loose(
+    Schema.Array(
+      Schema.Struct({
+        name: Maybe(Schema.String),
+        title: Maybe(Schema.String),
+        mimetype: Maybe(Schema.String),
+      }),
+    ),
+  ),
+}
 
 // Raw shapes Slack returns. Decoding ignores the many fields these leave out.
 const RawReaction = Schema.Struct({
@@ -19,6 +78,7 @@ export const RawMessage = Schema.Struct({
   text: Maybe(Schema.String),
   reply_count: Schema.optional(Schema.Number),
   reactions: Schema.optional(Schema.Array(RawReaction)),
+  ...Content,
 })
 export type RawMessage = typeof RawMessage.Type
 
@@ -28,6 +88,7 @@ export const RawSearchMatch = Schema.Struct({
   user: Maybe(Schema.String),
   username: Maybe(Schema.String),
   text: Maybe(Schema.String),
+  ...Content,
   permalink: Schema.String,
   channel: Schema.Struct({
     id: Schema.String,
