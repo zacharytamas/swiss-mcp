@@ -162,6 +162,35 @@ const page = (messages: Raw[], p: URLSearchParams, order: 'asc' | 'desc') => {
   }
 }
 
+// Reactions on CGEN 1700000000.000001, by emoji. Each tool call is a fresh server process, so tests share this.
+const reactionsOn = new Map<string, string[]>([
+  ['eyes', ['UBOB', ME]],
+  ['tada', ['UANN']],
+])
+const reactedMessage = {
+  type: 'message',
+  ts: '1700000000.000001',
+  user: 'UBOB',
+  text: 'Shipping <#CGEN> today',
+}
+const withReactions = () => ({
+  ...reactedMessage,
+  reactions: [...reactionsOn].map(([name, users]) => ({
+    name,
+    users,
+    count: users.length,
+  })),
+})
+const react = (p: URLSearchParams, add: boolean): Raw => {
+  const name = String(p.get('name'))
+  const users = reactionsOn.get(name) ?? []
+  if (add === users.includes(ME)) {
+    return { ok: false, error: add ? 'already_reacted' : 'no_reaction' }
+  }
+  reactionsOn.set(name, add ? [...users, ME] : users.filter((u) => u !== ME))
+  return {}
+}
+
 const posted: Raw[] = []
 let server: Bun.Server<undefined>
 
@@ -250,6 +279,48 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
     posted.push(Object.fromEntries(p))
     return { channel: p.get('channel'), ts: '1700000000.000100' }
   },
+  'reactions.get': () => ({ type: 'message', message: withReactions() }),
+  'reactions.add': (p) => react(p, true),
+  'reactions.remove': (p) => react(p, false),
+  // Two pages; the first holds a file, which the tool leaves out. Without full=true, Slack may leave out reactions
+  // other people left, and this fake leaves them all out.
+  'reactions.list': (p) =>
+    p.get('full') !== 'true'
+      ? {
+          items: [
+            {
+              type: 'message',
+              channel: 'CGEN',
+              message: {
+                ...reactedMessage,
+                reactions: [{ name: 'eyes', users: [ME], count: 2 }],
+              },
+            },
+          ],
+        }
+      : p.get('cursor') === 'page2'
+        ? {
+            items: [
+              { type: 'message', channel: 'CGEN', message: withReactions() },
+              {
+                type: 'message',
+                channel: 'CRAND',
+                message: {
+                  ts: '1700000000.000002',
+                  user: 'UANN',
+                  text: 'lunch?',
+                },
+              },
+            ],
+          }
+        : {
+            items: [
+              { type: 'file', file: { id: 'F1' } },
+              { type: 'message', channel: 'CGEN', message: withReactions() },
+              { type: 'message', channel: 'CGEN', message: withReactions() },
+            ],
+            response_metadata: { next_cursor: 'page2' },
+          },
 }
 
 beforeAll(() => {
@@ -542,6 +613,114 @@ describe('slack_draft_to_self', () => {
       error: 'SlackInputInvalid',
       posted: [],
     })
+  })
+})
+
+describe('reactions', () => {
+  const link = 'https://acme.slack.com/archives/CGEN/p1700000000000001'
+
+  test('slack_get_reactions names who reacted and marks mine', async () => {
+    const result = await callTool('slack_get_reactions', { permalink: link })
+
+    expect(result.structuredContent.message.text).toBe('Shipping #cgen today')
+    expect(result.structuredContent.reactions).toEqual([
+      {
+        name: 'eyes',
+        count: 2,
+        byMe: true,
+        users: [
+          { id: 'UBOB', name: 'Someone' },
+          { id: ME, name: 'Zach Tamas' },
+        ],
+      },
+      {
+        name: 'tada',
+        count: 1,
+        byMe: false,
+        users: [{ id: 'UANN', name: 'Someone' }],
+      },
+    ])
+  })
+
+  test('adding a reaction twice changes it once, and removing it twice removes it once', async () => {
+    const add = () =>
+      callTool('slack_add_reaction', {
+        channel: 'CGEN',
+        ts: '1700000000.000001',
+        name: ':tada:',
+      })
+    const remove = () =>
+      callTool('slack_remove_reaction', { permalink: link, name: 'tada' })
+
+    const added = [
+      (await add()).structuredContent,
+      (await add()).structuredContent,
+    ]
+    const afterAdd = [...(reactionsOn.get('tada') ?? [])]
+    const removed = [
+      (await remove()).structuredContent.changed,
+      (await remove()).structuredContent.changed,
+    ]
+
+    expect(added).toEqual([
+      { name: 'tada', changed: true },
+      { name: 'tada', changed: false },
+    ])
+    expect(afterAdd).toEqual(['UANN', ME])
+    expect(removed).toEqual([true, false])
+    expect(reactionsOn.get('tada')).toEqual(['UANN'])
+  })
+
+  test('a Slack error other than a no-op still fails the call', async () => {
+    const result = await callTool(
+      'slack_add_reaction',
+      {
+        permalink: link,
+        name: 'eyes',
+      },
+      'xoxp-revoked',
+    )
+
+    expect(JSON.parse(result.content[0].text).error).toBe(
+      'SlackApiError:invalid_auth',
+    )
+  })
+
+  // Slack lists a message once per reaction of mine on it, so CGEN appears twice on page 1 and again on page 2.
+  test('slack_list_my_reactions lists each message once across pages and leaves out files', async () => {
+    const result = await callTool('slack_list_my_reactions', {})
+
+    expect(
+      result.structuredContent.messages.map(
+        (m: { channel: { id: string }; ts: string }) => [m.channel.id, m.ts],
+      ),
+    ).toEqual([
+      ['CGEN', '1700000000.000001'],
+      ['CRAND', '1700000000.000002'],
+    ])
+  })
+
+  test('slack_list_my_reactions stops at limit', async () => {
+    const result = await callTool('slack_list_my_reactions', { limit: 1 })
+
+    expect(result.structuredContent.messages).toHaveLength(1)
+  })
+
+  test('duplicates do not use up the limit', async () => {
+    const result = await callTool('slack_list_my_reactions', { limit: 2 })
+
+    expect(
+      result.structuredContent.messages.map((m: { ts: string }) => m.ts),
+    ).toEqual(['1700000000.000001', '1700000000.000002'])
+  })
+
+  test('slack_list_my_reactions includes reactions other people left', async () => {
+    const result = await callTool('slack_list_my_reactions', { limit: 1 })
+
+    expect(result.structuredContent.messages[0].reactions).toEqual([
+      { name: 'eyes', count: 2, byMe: true },
+      { name: 'tada', count: 1, byMe: false },
+    ])
   })
 })
 

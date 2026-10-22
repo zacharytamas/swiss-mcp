@@ -1,6 +1,6 @@
 # swiss-mcp
 
-An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Effect](https://effect.website), run on [Bun](https://bun.sh). It speaks MCP over stdio. Its tools fall into two groups. **Due** drives the Due app on macOS through Apple Shortcuts. **Slack** reads Slack through the Slack Web API with your user token.
+An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Effect](https://effect.website), run on [Bun](https://bun.sh). It speaks MCP over stdio. Its tools fall into two groups. **Due** drives the Due app on macOS through Apple Shortcuts. **Slack** reads Slack and manages your reactions through the Slack Web API with your user token.
 
 ```sh
 bun install
@@ -60,6 +60,9 @@ Measured on Due 26.4.4:
 | `slack_my_activity` | What you said since a day, grouped by thread or channel with what you replied to |
 | `slack_unanswered_mentions` | Mentions of you, your user groups or your name with no later reply or reaction from you |
 | `slack_draft_to_self` | Posts a draft to your own DM, naming where it should go |
+| `slack_get_reactions` | Reactions on one message, with who left each |
+| `slack_list_my_reactions` | Messages you reacted to, most recent first |
+| `slack_add_reaction` / `slack_remove_reaction` | Add or remove your emoji reaction on a message; a repeat is a no-op |
 
 ### Setup
 
@@ -68,10 +71,11 @@ Create a Slack app in your workspace, add these **User Token Scopes**, install i
 - `channels:history`, `groups:history`, `im:history`, `mpim:history`
 - `channels:read`, `groups:read`, `im:read`, `mpim:read`
 - `users:read`, `search:read`, `chat:write`
+- `reactions:read`, `reactions:write`
 - `usergroups:read` (without it, mentions of your user groups aren't checked and the tool says so in `notes`)
 - `users:read.email` (without it, `slack_resolve` leaves out email addresses)
 
-The server never posts anywhere but your own DM.
+The server never posts messages anywhere but your own DM. Reactions go on whatever message you point it at.
 
 ### Verify
 

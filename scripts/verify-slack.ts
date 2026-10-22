@@ -130,5 +130,31 @@ check(
   `searched ${JSON.stringify((mentions?.searchedFor as string[] | undefined)?.length)} queries, checked ${String(mentions?.checked)}, ${unanswered.length} unanswered (${JSON.stringify(unanswered.map((u) => u.via.join('+')))}); notes: ${JSON.stringify(mentions?.notes)}`,
 )
 
+const reacted = await call('slack_list_my_reactions', { limit: 5 })
+const rm = (reacted?.messages ?? []) as (Msg & {
+  reactions?: { byMe: boolean }[]
+})[]
+check(
+  'list_my_reactions',
+  rm.every((m) => m.reactions?.some((r) => r.byMe)),
+  `${rm.length} messages, each with a reaction of mine`,
+)
+const reactedTo = rm[0] ?? first
+if (reactedTo) {
+  const got = await call('slack_get_reactions', {
+    permalink: reactedTo.permalink,
+  })
+  const rs = (got?.reactions ?? []) as {
+    byMe: boolean
+    users: { id: string; name: string }[]
+  }[]
+  check(
+    'get_reactions',
+    (rm[0] === undefined || rs.some((r) => r.byMe)) &&
+      rs.every((r) => r.users.every((u) => u.name !== u.id)),
+    `${rs.length} reactions, every user resolved to a name`,
+  )
+}
+
 server.kill()
 process.exit(failures === 0 ? 0 : 1)

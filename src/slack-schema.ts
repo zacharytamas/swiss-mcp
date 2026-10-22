@@ -107,6 +107,17 @@ export const PostMessage = Schema.Struct({
   channel: Schema.String,
   ts: Schema.String,
 })
+export const ReactionsGet = Schema.Struct({ message: RawMessage })
+export const ReactionsList = Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({
+      type: Schema.String,
+      channel: Schema.optional(Schema.String),
+      message: Schema.optional(RawMessage),
+    }),
+  ),
+  response_metadata: Cursor,
+})
 
 // What every tool returns for a message: references resolved, so an agent never has to look up an ID.
 export const ChannelRef = Schema.Struct({
@@ -136,6 +147,15 @@ export const Message = Schema.Struct({
   ),
 })
 export type Message = typeof Message.Type
+
+export const Reaction = Schema.Struct({
+  name: Schema.String,
+  count: Schema.Number,
+  byMe: Schema.Boolean,
+  users: Schema.Array(
+    Schema.Struct({ id: Schema.String, name: Schema.String }),
+  ),
+})
 
 export const UserInfo = Schema.Struct({
   id: Schema.String,
@@ -206,6 +226,26 @@ export const Locator = {
     Schema.String.annotate({ description: 'Conversation ID: C…, G… or D….' }),
   ),
 }
+const MessageLocator = {
+  ...Locator,
+  ts: Schema.optional(
+    Schema.String.annotate({
+      description: 'Message ts, e.g. "1508284197.000015".',
+    }),
+  ),
+}
+export const ReactionTarget = Schema.Struct(MessageLocator)
+export const ReactionEdit = Schema.Struct({
+  ...MessageLocator,
+  name: Schema.String.check(Schema.isNonEmpty()).annotate({
+    description:
+      'Emoji name without colons, e.g. "thumbsup", "eyes", or a custom emoji; a skin tone is "thumbsup::skin-tone-2".',
+  }),
+})
+export const ReactionChange = Schema.Struct({
+  name: Schema.String,
+  changed: Schema.Boolean,
+})
 export const Conversation = Schema.Struct({
   channel: ChannelRef,
   threadTs: Schema.optionalKey(Schema.String),
