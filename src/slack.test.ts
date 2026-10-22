@@ -108,6 +108,161 @@ const channels: Record<string, Raw[]> = {
   CBOT: [
     { ts: ts(2, 13), user: null, username: 'pipedream', text: 'Run failed' },
   ],
+  // Content only in blocks, attachments or files, the way integrations and uploads post it.
+  CBLOCKS: [
+    {
+      ts: ts(3, 14),
+      user: null,
+      username: 'github status',
+      text: '',
+      blocks: [
+        { type: 'header', text: { type: 'plain_text', text: 'Incident' } },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: 'Degraded <https://githubstatus.com|Actions>',
+          },
+        },
+        {
+          type: 'actions',
+          elements: [
+            { type: 'button', text: { type: 'plain_text', text: 'Subscribe' } },
+          ],
+        },
+      ],
+    },
+    {
+      ts: ts(3, 15),
+      user: 'UBOB',
+      text: '',
+      files: [{ name: 'party.gif', mimetype: 'image/gif' }],
+    },
+    {
+      ts: ts(3, 16),
+      user: 'UANN',
+      text: 'Hello <@UME>',
+      blocks: [
+        {
+          type: 'rich_text',
+          elements: [
+            {
+              type: 'rich_text_section',
+              elements: [
+                { type: 'text', text: 'Hello ' },
+                { type: 'user', user_id: 'UME' },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      ts: ts(3, 17),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'rich_text',
+          elements: [
+            {
+              type: 'rich_text_section',
+              elements: [
+                { type: 'text', text: 'Shipped, thanks ' },
+                { type: 'user', user_id: 'UME' },
+                { type: 'text', text: ' in ' },
+                {
+                  type: 'link',
+                  url: 'https://ci.example.com',
+                  text: 'Build | Deploy',
+                },
+                { type: 'link', text: ' (details)' },
+                { type: 'toString' },
+              ],
+            },
+            {
+              type: 'rich_text_list',
+              elements: [
+                {
+                  type: 'rich_text_section',
+                  elements: [{ type: 'channel', channel_id: 'CGEN' }],
+                },
+              ],
+            },
+          ],
+        },
+        { type: '__proto__' },
+      ],
+    },
+    {
+      ts: ts(3, 18),
+      user: null,
+      username: 'deploy bot',
+      text: '',
+      blocks: [
+        { type: 'header', text: { type: 'plain_text', text: 'Ping <@UME>' } },
+        {
+          type: 'section',
+          fields: [{ type: 'plain_text', text: 'a & b <#CGEN>' }],
+        },
+        {
+          type: 'context',
+          elements: [{ type: 'mrkdwn', text: 'by <@UME>' }],
+        },
+      ],
+    },
+    {
+      ts: ts(3, 19),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        { type: 'markdown', text: '**Release** notes' },
+        {
+          type: 'rich_text',
+          elements: [
+            {
+              type: 'rich_text_section',
+              elements: [
+                { type: 'text', text: 'Due ' },
+                {
+                  type: 'date',
+                  timestamp: 1700000000,
+                  format: '{date_short}',
+                  fallback: 'Nov 14, 2023',
+                },
+                { type: 'text', text: ', starts ' },
+                { type: 'date', timestamp: 1700000000, format: '{time}' },
+                { type: 'text', text: ', ends ' },
+                { type: 'date', timestamp: 1e20, format: '{time}' },
+                { type: 'text', text: 'never' },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      ts: ts(3, 20),
+      user: null,
+      username: 'github status',
+      text: '',
+      blocks: [
+        {
+          type: 'context',
+          elements: [
+            { type: 'image', alt_text: 'degraded_performance' },
+            { type: 'mrkdwn', text: 'API Requests' },
+          ],
+        },
+        { type: 'image', alt_text: 'Chart <1h>' },
+        {
+          type: 'video',
+          title: { type: 'plain_text', text: 'Demo <v2>' },
+          alt_text: 'Product demo',
+        },
+      ],
+    },
+  ],
   CBUSY: [],
 }
 // 150 mentions from the last hour, newest first, then one from a day ago: more fresh ones than any limit.
@@ -141,6 +296,34 @@ const dmMatch = {
 const integrationMatch = {
   ...match('CGEN', { ts: ts(2, 12), user: null, text: 'Ticket 42 escalated' }),
   username: 'freshdesk alerts',
+}
+// A Jira-style integration post: empty text, content only in an attachment's fallback.
+const attachmentMatch = {
+  ...match('CGEN', { ts: ts(2, 14), user: null, text: '' }),
+  username: 'jira',
+  attachments: [{ fallback: 'PROJ-1 created: Fix login' }],
+}
+// Attachments that carry their content in Block Kit blocks or in legacy fields instead of text.
+const structuredAttachmentMatch = {
+  ...match('CGEN', { ts: ts(2, 15), user: null, text: '' }),
+  username: 'jira',
+  attachments: [
+    {
+      author_name: 'Jira Cloud',
+      title: 'PROJ-2',
+      fields: [
+        { title: 'Status', value: 'In Progress' },
+        { title: 'Assignee', value: '<@UME>' },
+      ],
+      fallback: 'PROJ-2 updated',
+      footer: 'Project Atlas',
+    },
+    {
+      blocks: [
+        { type: 'section', text: { type: 'mrkdwn', text: 'Deploy *done*' } },
+      ],
+    },
+  ],
 }
 
 // Pages like Slack: honours limit, cursor and an inclusive oldest/latest window; `order` is Slack's for the method.
@@ -255,7 +438,11 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
                   ? [dmMatch]
                   : q.startsWith('"Ticket"')
                     ? [integrationMatch]
-                    : []
+                    : q.startsWith('"Jira"')
+                      ? [attachmentMatch]
+                      : q.startsWith('"PROJ-2"')
+                        ? [structuredAttachmentMatch]
+                        : []
     const count = Number(p.get('count') ?? 20)
     const start = (Number(p.get('page') ?? 1) - 1) * count
     return {
@@ -500,6 +687,71 @@ test('slack_read_channel names an integration post with a null user after its us
   expect(result.structuredContent.messages[0].author).toEqual({
     id: '',
     name: 'pipedream',
+  })
+})
+
+describe('messages whose content is outside text', () => {
+  const textAt = async (at: string) => {
+    const result = await callTool('slack_read_channel', { channel: 'CBLOCKS' })
+    return result.structuredContent.messages.find(
+      (m: { ts: string }) => m.ts === at,
+    ).text
+  }
+
+  test('an empty-text post shows its header and section blocks, links resolved, and no button labels', async () => {
+    expect(await textAt(ts(3, 14))).toBe(
+      'Incident\nDegraded [Actions](https://githubstatus.com)',
+    )
+  })
+
+  test('a file-only post shows a placeholder naming the file', async () => {
+    expect(await textAt(ts(3, 15))).toBe('[image: party.gif]')
+  })
+
+  test('a post with text keeps its text and does not repeat its blocks', async () => {
+    expect(await textAt(ts(3, 16))).toBe('Hello @Zach Tamas')
+  })
+
+  test('an empty-text rich text post resolves mentions and links, keeps its lines, and skips what it cannot read', async () => {
+    expect(await textAt(ts(3, 17))).toBe(
+      'Shipped, thanks @Zach Tamas in [Build | Deploy](https://ci.example.com) (details)\n#cgen',
+    )
+  })
+
+  test('plain_text in header, fields and context stays literal while mrkdwn resolves', async () => {
+    expect(await textAt(ts(3, 18))).toBe(
+      'Ping <@UME>\na & b <#CGEN>\nby @Zach Tamas',
+    )
+  })
+
+  test('an empty-text search match uses its attachment fallback', async () => {
+    const result = await callTool('slack_search_messages', { query: '"Jira"' })
+
+    expect(result.structuredContent.messages[0].text).toBe(
+      'PROJ-1 created: Fix login',
+    )
+  })
+
+  test('an attachment shows its author, fields, footer and blocks', async () => {
+    const result = await callTool('slack_search_messages', {
+      query: '"PROJ-2"',
+    })
+
+    expect(result.structuredContent.messages[0].text).toBe(
+      'Jira Cloud\nPROJ-2\nStatus: In Progress\nAssignee: @Zach Tamas\nProject Atlas\nDeploy *done*',
+    )
+  })
+
+  test('a markdown block and rich text dates are readable', async () => {
+    expect(await textAt(ts(3, 19))).toBe(
+      '**Release** notes\nDue Nov 14, 2023, starts 2023-11-14T22:13:20.000Z, ends never',
+    )
+  })
+
+  test('images and videos show their alt text or title, in context and as blocks', async () => {
+    expect(await textAt(ts(3, 20))).toBe(
+      '[image: degraded_performance] API Requests\n[image: Chart <1h>]\n[video: Demo <v2>]',
+    )
   })
 })
 

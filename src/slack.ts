@@ -30,6 +30,7 @@ import {
   Message,
   MessagePage,
   PostMessage,
+  type RawBlock,
   type RawMessage,
   type RawSearchMatch,
   Reaction,
@@ -193,6 +194,121 @@ const kindOf = (c: {
 }): ChannelRef['kind'] =>
   c.is_im ? 'dm' : c.is_mpim ? 'group_dm' : c.is_private ? 'private' : 'channel'
 
+const escapeText = (s: string) =>
+  s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+
+// Slack parses markup only in `mrkdwn` text objects. `plain_text` and rich text strings are literal, so they are
+// escaped the way Slack escapes `text`, and `render` unescapes them without reading them as references.
+const textOf = (t: RawBlock['text']) => {
+  if (t === undefined) return undefined
+  if (typeof t === 'string') return escapeText(t)
+  return t.type === 'mrkdwn' ? t.text : escapeText(t.text)
+}
+
+// Inline rich text elements, rewritten into the <…> markup `render` already resolves in `text`.
+const inline = new Map<string, (e: RawBlock) => string>([
+  ['text', (e) => textOf(e.text) ?? ''],
+  [
+    'link',
+    (e) => {
+      const label = textOf(e.text) ?? ''
+      return e.url ? `<${e.url}${label && `|${label}`}>` : label
+    },
+  ],
+  ['user', (e) => `<@${e.user_id}>`],
+  ['channel', (e) => `<#${e.channel_id}>`],
+  ['usergroup', (e) => `<!subteam^${e.usergroup_id}>`],
+  ['broadcast', (e) => `<!${e.range}>`],
+  ['emoji', (e) => `:${e.name}:`],
+  [
+    'date',
+    (e) => {
+      if (e.fallback !== undefined) return escapeText(e.fallback)
+      const date = new Date((e.timestamp ?? Number.NaN) * 1000)
+      return Number.isNaN(date.getTime()) ? '' : date.toISOString()
+    },
+  ],
+])
+const INLINE_CONTAINERS = new Set([
+  'rich_text_section',
+  'rich_text_preformatted',
+  'rich_text_quote',
+])
+const richText = (e: RawBlock): string =>
+  inline.get(e.type)?.(e) ??
+  (e.elements ?? [])
+    .map(richText)
+    .join(INLINE_CONTAINERS.has(e.type) ? '' : '\n')
+
+const image = (e: RawBlock) =>
+  e.alt_text ? `[image: ${escapeText(e.alt_text)}]` : undefined
+
+// Block types that carry readable text. Others (actions, divider, input) hold controls or nothing to read.
+const blockText = new Map<string, (b: RawBlock) => string | undefined>([
+  ['header', (b) => textOf(b.text)],
+  ['markdown', (b) => textOf(b.text)],
+  [
+    'section',
+    (b) =>
+      [textOf(b.text), ...(b.fields ?? []).map(textOf)]
+        .filter(Boolean)
+        .join('\n'),
+  ],
+  [
+    'context',
+    (b) =>
+      (b.elements ?? [])
+        .map((e) =>
+          e.type === 'image'
+            ? image(e)
+            : typeof e.text === 'string'
+              ? textOf({ type: e.type, text: e.text })
+              : undefined,
+        )
+        .filter(Boolean)
+        .join(' '),
+  ],
+  ['image', image],
+  ['video', (b) => b.title && `[video: ${textOf(b.title)}]`],
+  ['rich_text', richText],
+])
+
+const blocksText = (blocks: ReadonlyArray<RawBlock> | null | undefined) =>
+  (blocks ?? []).map((b) => blockText.get(b.type)?.(b))
+
+// A message's text in Slack markup. Integrations and uploads often leave `text` empty and put the content in blocks,
+// attachments or files, so those stand in only when `text` is empty.
+const markupOf = (
+  m: Pick<RawMessage, 'text' | 'blocks' | 'attachments' | 'files'>,
+) =>
+  m.text ||
+  [
+    ...blocksText(m.blocks),
+    ...(m.attachments ?? []).map(
+      (a) =>
+        [
+          a.author_name,
+          a.pretext,
+          a.title,
+          a.text,
+          ...(a.fields ?? []).map((f) =>
+            [f.title, f.value].filter(Boolean).join(': '),
+          ),
+          a.footer,
+          ...blocksText(a.blocks),
+        ]
+          .filter(Boolean)
+          .join('\n') || a.fallback,
+    ),
+    ...(m.files ?? []).map(
+      (f) =>
+        `[${f.mimetype?.startsWith('image/') ? 'image' : 'file'}: ${escapeText(f.name ?? f.title ?? 'untitled')}]`,
+    ),
+  ]
+    .map((s) => s?.trim())
+    .filter(Boolean)
+    .join('\n')
+
 const make = Effect.gen(function* () {
   const api = yield* SlackApi
   const users = new Map<string, UserInfo>()
@@ -299,7 +415,8 @@ const make = Effect.gen(function* () {
         tokens,
         (token) =>
           Effect.gen(function* () {
-            const [target = '', label] = token.slice(1, -1).split('|', 2)
+            const [target = '', ...rest] = token.slice(1, -1).split('|')
+            const label = rest.length ? rest.join('|') : undefined
             if (target.startsWith('@')) {
               return `@${label ?? (yield* userName(target.slice(1)))}`
             }
@@ -366,7 +483,7 @@ const make = Effect.gen(function* () {
             : (raw.username ?? 'unknown'),
         },
         fromMe: authorId === myId,
-        text: yield* render(raw.text ?? ''),
+        text: yield* render(markupOf(raw)),
         permalink: permalinkFor(url, ref.id, raw.ts, raw.thread_ts),
         ...(raw.reply_count ? { replyCount: raw.reply_count } : {}),
         ...(raw.reactions
@@ -402,7 +519,7 @@ const make = Effect.gen(function* () {
             : (m.username ?? 'unknown'),
         },
         fromMe: authorId === myId,
-        text: yield* render(m.text ?? ''),
+        text: yield* render(markupOf(m)),
         permalink: m.permalink,
       } satisfies Message
     })
