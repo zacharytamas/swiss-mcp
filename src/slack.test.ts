@@ -104,6 +104,10 @@ const channels: Record<string, Raw[]> = {
       text: `chatter ${i}`,
     })),
   ],
+  // History leaves `user` out on bot posts today; this guards against the `user: null` that search.messages sends.
+  CBOT: [
+    { ts: ts(2, 13), user: null, username: 'pipedream', text: 'Run failed' },
+  ],
   CBUSY: [],
 }
 // 150 mentions from the last hour, newest first, then one from a day ago: more fresh ones than any limit.
@@ -417,6 +421,15 @@ test('slack_read_channel reports the reaction count Slack gives, not the length 
     (m: { text: string }) => m.text === '@Zach Tamas fyi',
   )
   expect(reacted.reactions).toEqual([{ name: 'eyes', count: 12, byMe: true }])
+})
+
+test('slack_read_channel names an integration post with a null user after its username', async () => {
+  const result = await callTool('slack_read_channel', { channel: 'CBOT' })
+
+  expect(result.structuredContent.messages[0].author).toEqual({
+    id: '',
+    name: 'pipedream',
+  })
 })
 
 test('mentions newer than minAgeHours do not use up the limit before older ones are searched', async () => {
