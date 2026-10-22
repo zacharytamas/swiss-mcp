@@ -139,7 +139,7 @@ check(
   rm.every((m) => m.reactions?.some((r) => r.byMe)),
   `${rm.length} messages, each with a reaction of mine`,
 )
-const reactedTo = rm[0]
+const reactedTo = rm[0] ?? first
 if (reactedTo) {
   const got = await call('slack_get_reactions', {
     permalink: reactedTo.permalink,
@@ -150,7 +150,7 @@ if (reactedTo) {
   }[]
   check(
     'get_reactions',
-    rs.some((r) => r.byMe) &&
+    (rm[0] === undefined || rs.some((r) => r.byMe)) &&
       rs.every((r) => r.users.every((u) => u.name !== u.id)),
     `${rs.length} reactions, every user resolved to a name`,
   )
