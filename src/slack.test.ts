@@ -211,6 +211,33 @@ const channels: Record<string, Raw[]> = {
         },
       ],
     },
+    {
+      ts: ts(3, 19),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        { type: 'markdown', text: '**Release** notes' },
+        {
+          type: 'rich_text',
+          elements: [
+            {
+              type: 'rich_text_section',
+              elements: [
+                { type: 'text', text: 'Due ' },
+                {
+                  type: 'date',
+                  timestamp: 1700000000,
+                  format: '{date_short}',
+                  fallback: 'Nov 14, 2023',
+                },
+                { type: 'text', text: ', starts ' },
+                { type: 'date', timestamp: 1700000000, format: '{time}' },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   ],
   CBUSY: [],
 }
@@ -258,12 +285,14 @@ const structuredAttachmentMatch = {
   username: 'jira',
   attachments: [
     {
+      author_name: 'Jira Cloud',
       title: 'PROJ-2',
       fields: [
         { title: 'Status', value: 'In Progress' },
         { title: 'Assignee', value: '<@UME>' },
       ],
       fallback: 'PROJ-2 updated',
+      footer: 'Project Atlas',
     },
     {
       blocks: [
@@ -679,13 +708,19 @@ describe('messages whose content is outside text', () => {
     )
   })
 
-  test('an attachment shows its fields and its blocks', async () => {
+  test('an attachment shows its author, fields, footer and blocks', async () => {
     const result = await callTool('slack_search_messages', {
       query: '"PROJ-2"',
     })
 
     expect(result.structuredContent.messages[0].text).toBe(
-      'PROJ-2\nStatus: In Progress\nAssignee: @Zach Tamas\nDeploy *done*',
+      'Jira Cloud\nPROJ-2\nStatus: In Progress\nAssignee: @Zach Tamas\nProject Atlas\nDeploy *done*',
+    )
+  })
+
+  test('a markdown block and rich text dates are readable', async () => {
+    expect(await textAt(ts(3, 19))).toBe(
+      '**Release** notes\nDue Nov 14, 2023, starts 2023-11-14T22:13:20.000Z',
     )
   })
 })

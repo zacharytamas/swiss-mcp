@@ -28,6 +28,7 @@ export interface RawBlock {
   readonly range?: string | undefined
   readonly name?: string | undefined
   readonly fallback?: string | undefined
+  readonly timestamp?: number | undefined
 }
 const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
   type: Schema.String,
@@ -43,6 +44,7 @@ const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
   range: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String),
   fallback: Schema.optional(Schema.String),
+  timestamp: Schema.optional(Schema.Number),
 })
 const Blocks = Loose(Schema.Array(RawBlock))
 const Content = {
@@ -50,6 +52,7 @@ const Content = {
   attachments: Loose(
     Schema.Array(
       Schema.Struct({
+        author_name: Maybe(Schema.String),
         pretext: Maybe(Schema.String),
         title: Maybe(Schema.String),
         text: Maybe(Schema.String),
@@ -63,6 +66,7 @@ const Content = {
         ),
         blocks: Blocks,
         fallback: Maybe(Schema.String),
+        footer: Maybe(Schema.String),
       }),
     ),
   ),

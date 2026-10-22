@@ -221,6 +221,16 @@ const inline = new Map<string, (e: RawBlock) => string>([
   ['usergroup', (e) => `<!subteam^${e.usergroup_id}>`],
   ['broadcast', (e) => `<!${e.range}>`],
   ['emoji', (e) => `:${e.name}:`],
+  [
+    'date',
+    (e) =>
+      escapeText(
+        e.fallback ??
+          (e.timestamp === undefined
+            ? ''
+            : new Date(e.timestamp * 1000).toISOString()),
+      ),
+  ],
 ])
 const INLINE_CONTAINERS = new Set([
   'rich_text_section',
@@ -236,6 +246,7 @@ const richText = (e: RawBlock): string =>
 // Block types that carry readable text. Others (actions, image, divider, input) hold controls or nothing to read.
 const blockText = new Map<string, (b: RawBlock) => string | undefined>([
   ['header', (b) => textOf(b.text)],
+  ['markdown', (b) => textOf(b.text)],
   [
     'section',
     (b) =>
@@ -272,12 +283,14 @@ const markupOf = (
     ...(m.attachments ?? []).map(
       (a) =>
         [
+          a.author_name,
           a.pretext,
           a.title,
           a.text,
           ...(a.fields ?? []).map((f) =>
             [f.title, f.value].filter(Boolean).join(': '),
           ),
+          a.footer,
           ...blocksText(a.blocks),
         ]
           .filter(Boolean)
