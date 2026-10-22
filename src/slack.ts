@@ -1165,7 +1165,7 @@ export const SlackToolkit = Toolkit.make(
   ),
   slackTool(
     'slack_get_reactions',
-    'Reactions on one message: each emoji with its count, whether you left it, and who reacted (resolved to names). Pass the permalink, or channel plus ts. The message itself comes back too.',
+    'Reactions on one message: each emoji with its count, whether you left it, and who reacted (resolved to names). On a popular reaction Slack may list fewer users than count; count is the true total. Pass the permalink, or channel plus ts. The message itself comes back too.',
     ReactionTarget,
     Schema.Struct({ message: Message, reactions: Schema.Array(Reaction) }),
     'reads',
