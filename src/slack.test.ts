@@ -255,6 +255,11 @@ const channels: Record<string, Raw[]> = {
           ],
         },
         { type: 'image', alt_text: 'Chart <1h>' },
+        {
+          type: 'video',
+          title: { type: 'plain_text', text: 'Demo <v2>' },
+          alt_text: 'Product demo',
+        },
       ],
     },
   ],
@@ -743,9 +748,9 @@ describe('messages whose content is outside text', () => {
     )
   })
 
-  test('images show their alt text, in context and as blocks', async () => {
+  test('images and videos show their alt text or title, in context and as blocks', async () => {
     expect(await textAt(ts(3, 20))).toBe(
-      '[image: degraded_performance] API Requests\n[image: Chart <1h>]',
+      '[image: degraded_performance] API Requests\n[image: Chart <1h>]\n[video: Demo <v2>]',
     )
   })
 })

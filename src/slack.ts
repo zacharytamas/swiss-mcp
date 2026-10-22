@@ -269,6 +269,7 @@ const blockText = new Map<string, (b: RawBlock) => string | undefined>([
         .join(' '),
   ],
   ['image', image],
+  ['video', (b) => b.title && `[video: ${textOf(b.title)}]`],
   ['rich_text', richText],
 ])
 
