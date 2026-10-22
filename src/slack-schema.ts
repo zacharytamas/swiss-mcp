@@ -245,7 +245,6 @@ export const ReactionEdit = Schema.Struct({
 export const ReactionChange = Schema.Struct({
   name: Schema.String,
   changed: Schema.Boolean,
-  permalink: Schema.String,
 })
 export const Conversation = Schema.Struct({
   channel: ChannelRef,

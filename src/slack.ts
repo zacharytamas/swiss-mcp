@@ -920,7 +920,7 @@ const make = Effect.gen(function* () {
       do {
         const res = yield* api.call(
           'reactions.list',
-          { limit: Math.min(limit, 100), cursor },
+          { limit: Math.min(limit, 100), cursor, full: true },
           ReactionsList,
         )
         for (const item of res.items) {
@@ -958,12 +958,7 @@ const make = Effect.gen(function* () {
               : Effect.fail(e),
           ),
         )
-      const { url } = yield* me
-      return {
-        name,
-        changed,
-        permalink: permalinkFor(url, at.channel, at.timestamp),
-      }
+      return { name, changed }
     })
 
   return {

@@ -282,31 +282,45 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
   'reactions.get': () => ({ type: 'message', message: withReactions() }),
   'reactions.add': (p) => react(p, true),
   'reactions.remove': (p) => react(p, false),
-  // Two pages; the first holds a file, which the tool leaves out.
+  // Two pages; the first holds a file, which the tool leaves out. Without full=true, Slack may leave out reactions
+  // other people left, and this fake leaves them all out.
   'reactions.list': (p) =>
-    p.get('cursor') === 'page2'
+    p.get('full') !== 'true'
       ? {
           items: [
-            { type: 'message', channel: 'CGEN', message: withReactions() },
             {
               type: 'message',
-              channel: 'CRAND',
+              channel: 'CGEN',
               message: {
-                ts: '1700000000.000002',
-                user: 'UANN',
-                text: 'lunch?',
+                ...reactedMessage,
+                reactions: [{ name: 'eyes', users: [ME], count: 2 }],
               },
             },
           ],
         }
-      : {
-          items: [
-            { type: 'file', file: { id: 'F1' } },
-            { type: 'message', channel: 'CGEN', message: withReactions() },
-            { type: 'message', channel: 'CGEN', message: withReactions() },
-          ],
-          response_metadata: { next_cursor: 'page2' },
-        },
+      : p.get('cursor') === 'page2'
+        ? {
+            items: [
+              { type: 'message', channel: 'CGEN', message: withReactions() },
+              {
+                type: 'message',
+                channel: 'CRAND',
+                message: {
+                  ts: '1700000000.000002',
+                  user: 'UANN',
+                  text: 'lunch?',
+                },
+              },
+            ],
+          }
+        : {
+            items: [
+              { type: 'file', file: { id: 'F1' } },
+              { type: 'message', channel: 'CGEN', message: withReactions() },
+              { type: 'message', channel: 'CGEN', message: withReactions() },
+            ],
+            response_metadata: { next_cursor: 'page2' },
+          },
 }
 
 beforeAll(() => {
@@ -649,8 +663,8 @@ describe('reactions', () => {
     ]
 
     expect(added).toEqual([
-      { name: 'tada', changed: true, permalink: link },
-      { name: 'tada', changed: false, permalink: link },
+      { name: 'tada', changed: true },
+      { name: 'tada', changed: false },
     ])
     expect(afterAdd).toEqual(['UANN', ME])
     expect(removed).toEqual([true, false])
@@ -698,6 +712,15 @@ describe('reactions', () => {
     expect(
       result.structuredContent.messages.map((m: { ts: string }) => m.ts),
     ).toEqual(['1700000000.000001', '1700000000.000002'])
+  })
+
+  test('slack_list_my_reactions includes reactions other people left', async () => {
+    const result = await callTool('slack_list_my_reactions', { limit: 1 })
+
+    expect(result.structuredContent.messages[0].reactions).toEqual([
+      { name: 'eyes', count: 2, byMe: true },
+      { name: 'tada', count: 1, byMe: false },
+    ])
   })
 })
 
