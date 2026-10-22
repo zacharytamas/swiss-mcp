@@ -14,9 +14,9 @@ const RawReaction = Schema.Struct({
 export const RawMessage = Schema.Struct({
   ts: Schema.String,
   thread_ts: Schema.optional(Schema.String),
-  user: Schema.optional(Schema.String),
-  username: Schema.optional(Schema.String),
-  text: Schema.optional(Schema.String),
+  user: Maybe(Schema.String),
+  username: Maybe(Schema.String),
+  text: Maybe(Schema.String),
   reply_count: Schema.optional(Schema.Number),
   reactions: Schema.optional(Schema.Array(RawReaction)),
 })
