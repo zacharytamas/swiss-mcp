@@ -307,8 +307,9 @@ const callTool = async (
   let buffered = ''
   for await (const chunk of proc.stdout.pipeThrough(new TextDecoderStream())) {
     buffered += chunk
-    const found = buffered
-      .split('\n')
+    const lines = buffered.split('\n')
+    buffered = lines.pop() ?? ''
+    const found = lines
       .filter((line) => line.startsWith('{'))
       .map((line) => JSON.parse(line))
       .find((message) => message.id === 2)
