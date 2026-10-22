@@ -232,6 +232,9 @@ const channels: Record<string, Raw[]> = {
                 },
                 { type: 'text', text: ', starts ' },
                 { type: 'date', timestamp: 1700000000, format: '{time}' },
+                { type: 'text', text: ', ends ' },
+                { type: 'date', timestamp: 1e20, format: '{time}' },
+                { type: 'text', text: 'never' },
               ],
             },
           ],
@@ -720,7 +723,7 @@ describe('messages whose content is outside text', () => {
 
   test('a markdown block and rich text dates are readable', async () => {
     expect(await textAt(ts(3, 19))).toBe(
-      '**Release** notes\nDue Nov 14, 2023, starts 2023-11-14T22:13:20.000Z',
+      '**Release** notes\nDue Nov 14, 2023, starts 2023-11-14T22:13:20.000Z, ends never',
     )
   })
 })

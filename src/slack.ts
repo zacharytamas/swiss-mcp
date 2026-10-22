@@ -223,13 +223,11 @@ const inline = new Map<string, (e: RawBlock) => string>([
   ['emoji', (e) => `:${e.name}:`],
   [
     'date',
-    (e) =>
-      escapeText(
-        e.fallback ??
-          (e.timestamp === undefined
-            ? ''
-            : new Date(e.timestamp * 1000).toISOString()),
-      ),
+    (e) => {
+      if (e.fallback !== undefined) return escapeText(e.fallback)
+      const date = new Date((e.timestamp ?? Number.NaN) * 1000)
+      return Number.isNaN(date.getTime()) ? '' : date.toISOString()
+    },
   ],
 ])
 const INLINE_CONTAINERS = new Set([
