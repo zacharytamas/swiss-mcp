@@ -1,5 +1,9 @@
 import { Schema } from 'effect'
 
+// Slack may send null for a field it has no value for: user fields on Slack Connect users, `user` on integration posts.
+const Maybe = <S extends Schema.Top>(s: S) =>
+  Schema.optional(Schema.NullishOr(s))
+
 // Raw shapes Slack returns. Decoding ignores the many fields these leave out.
 const RawReaction = Schema.Struct({
   name: Schema.String,
@@ -20,10 +24,10 @@ export type RawMessage = typeof RawMessage.Type
 
 export const RawSearchMatch = Schema.Struct({
   ts: Schema.String,
-  type: Schema.optional(Schema.String),
-  user: Schema.optional(Schema.String),
-  username: Schema.optional(Schema.String),
-  text: Schema.optional(Schema.String),
+  type: Maybe(Schema.String),
+  user: Maybe(Schema.String),
+  username: Maybe(Schema.String),
+  text: Maybe(Schema.String),
   permalink: Schema.String,
   channel: Schema.Struct({
     id: Schema.String,
@@ -35,9 +39,6 @@ export const RawSearchMatch = Schema.Struct({
 })
 export type RawSearchMatch = typeof RawSearchMatch.Type
 
-// Slack may send null for any user field it has no value for, notably on Slack Connect users.
-const Maybe = <S extends Schema.Top>(s: S) =>
-  Schema.optional(Schema.NullishOr(s))
 const RawUser = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
