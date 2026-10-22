@@ -211,9 +211,8 @@ const inline = new Map<string, (e: RawBlock) => string>([
   [
     'link',
     (e) => {
-      const label = textOf(e.text)
-      if (!e.url) return label ?? ''
-      return label ? `<${e.url}|${label}>` : `<${e.url}>`
+      const label = textOf(e.text) ?? ''
+      return e.url ? `<${e.url}${label && `|${label}`}>` : label
     },
   ],
   ['user', (e) => `<@${e.user_id}>`],
@@ -409,10 +408,8 @@ const make = Effect.gen(function* () {
         tokens,
         (token) =>
           Effect.gen(function* () {
-            const inner = token.slice(1, -1)
-            const bar = inner.indexOf('|')
-            const target = bar < 0 ? inner : inner.slice(0, bar)
-            const label = bar < 0 ? undefined : inner.slice(bar + 1)
+            const [target = '', ...rest] = token.slice(1, -1).split('|')
+            const label = rest.length ? rest.join('|') : undefined
             if (target.startsWith('@')) {
               return `@${label ?? (yield* userName(target.slice(1)))}`
             }
