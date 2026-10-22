@@ -287,6 +287,7 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
     p.get('cursor') === 'page2'
       ? {
           items: [
+            { type: 'message', channel: 'CGEN', message: withReactions() },
             {
               type: 'message',
               channel: 'CRAND',
@@ -301,6 +302,7 @@ const api: Record<string, (p: URLSearchParams) => Raw> = {
       : {
           items: [
             { type: 'file', file: { id: 'F1' } },
+            { type: 'message', channel: 'CGEN', message: withReactions() },
             { type: 'message', channel: 'CGEN', message: withReactions() },
           ],
           response_metadata: { next_cursor: 'page2' },
@@ -670,7 +672,8 @@ describe('reactions', () => {
     )
   })
 
-  test('slack_list_my_reactions follows the cursor and leaves out files', async () => {
+  // Slack lists a message once per reaction of mine on it, so CGEN appears twice on page 1 and again on page 2.
+  test('slack_list_my_reactions lists each message once across pages and leaves out files', async () => {
     const result = await callTool('slack_list_my_reactions', {})
 
     expect(
@@ -687,6 +690,14 @@ describe('reactions', () => {
     const result = await callTool('slack_list_my_reactions', { limit: 1 })
 
     expect(result.structuredContent.messages).toHaveLength(1)
+  })
+
+  test('duplicates do not use up the limit', async () => {
+    const result = await callTool('slack_list_my_reactions', { limit: 2 })
+
+    expect(
+      result.structuredContent.messages.map((m: { ts: string }) => m.ts),
+    ).toEqual(['1700000000.000001', '1700000000.000002'])
   })
 })
 

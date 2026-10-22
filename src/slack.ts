@@ -914,6 +914,8 @@ const make = Effect.gen(function* () {
   const myReactions = (limit: number) =>
     Effect.gen(function* () {
       const out: Message[] = []
+      // Slack lists a message once per reaction of mine on it.
+      const seen = new Set<string>()
       let cursor: string | undefined
       do {
         const res = yield* api.call(
@@ -926,6 +928,9 @@ const make = Effect.gen(function* () {
           if (item.type !== 'message' || !item.channel || !item.message) {
             continue
           }
+          const key = `${item.channel}/${item.message.ts}`
+          if (seen.has(key)) continue
+          seen.add(key)
           out.push(
             yield* fromRaw(item.message, yield* channelRef(item.channel)),
           )
