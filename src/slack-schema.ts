@@ -235,13 +235,13 @@ const MessageLocator = {
   ),
 }
 export const ReactionTarget = Schema.Struct(MessageLocator)
-export const ReactionEdit = (emoji: string) =>
-  Schema.Struct({
-    ...MessageLocator,
-    name: Schema.String.check(Schema.isNonEmpty()).annotate({
-      description: `Emoji name without colons, e.g. ${emoji}.`,
-    }),
-  })
+export const ReactionEdit = Schema.Struct({
+  ...MessageLocator,
+  name: Schema.String.check(Schema.isNonEmpty()).annotate({
+    description:
+      'Emoji name without colons, e.g. "thumbsup", "eyes", or a custom emoji; a skin tone is "thumbsup::skin-tone-2".',
+  }),
+})
 export const ReactionChange = Schema.Struct({
   name: Schema.String,
   changed: Schema.Boolean,

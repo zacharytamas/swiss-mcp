@@ -885,7 +885,7 @@ const make = Effect.gen(function* () {
       return { channel: t.channel, timestamp: t.ts }
     })
 
-  const reactions = (p: Parameters<typeof messageAt>[0]) =>
+  const reactions = (p: typeof ReactionTarget.Type) =>
     Effect.gen(function* () {
       const at = yield* messageAt(p)
       const { message } = yield* api.call(
@@ -943,7 +943,7 @@ const make = Effect.gen(function* () {
   // Adding a reaction you already left, or removing one you never left, is the end state the caller asked for.
   const react = (
     method: 'reactions.add' | 'reactions.remove',
-    p: Parameters<typeof messageAt>[0] & { readonly name: string },
+    p: typeof ReactionEdit.Type,
   ) =>
     Effect.gen(function* () {
       const at = yield* messageAt(p)
@@ -1189,16 +1189,14 @@ export const SlackToolkit = Toolkit.make(
   slackTool(
     'slack_add_reaction',
     'Add your emoji reaction to a message. Pass the permalink, or channel plus ts. changed: false means you had already left that reaction.',
-    ReactionEdit(
-      '"thumbsup", "eyes", or a custom emoji; a skin tone is "thumbsup::skin-tone-2"',
-    ),
+    ReactionEdit,
     ReactionChange,
     'adds',
   ),
   slackTool(
     'slack_remove_reaction',
     'Remove your emoji reaction from a message. Pass the permalink, or channel plus ts. changed: false means you had not left that reaction. Only your own reactions can be removed.',
-    ReactionEdit('"thumbsup"'),
+    ReactionEdit,
     ReactionChange,
     'removes',
   ),
