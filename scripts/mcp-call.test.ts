@@ -10,9 +10,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-// mcp-call.ts spawns src/main.ts relative to its working directory, so a temp directory holding this fake runs it
-// instead. The fake records its PID and misbehaves per MODE. The interval keeps it alive after stdin closes, the way
-// the real server stays alive; it is the fake's lifetime, not a wait in the test.
+// The interval keeps the fake alive after stdin closes, the way the real server stays alive. It is the fake's
+// lifetime, not a wait in the test.
 const fakeServer = `
 await Bun.write(process.env.PID_FILE, String(process.pid))
 setInterval(() => {}, 60_000)
@@ -27,7 +26,6 @@ beforeAll(() => {
   mkdirSync(join(dir, 'src'))
   writeFileSync(join(dir, 'src/main.ts'), fakeServer)
 })
-// A failing run must not leave fakes behind: kill any PID a test recorded before deleting the directory.
 afterAll(() => {
   for (const f of new Bun.Glob('*.pid').scanSync(dir)) {
     try {
@@ -54,8 +52,7 @@ const run = async (mode: string, args: string[]) => {
     ['bun', join(import.meta.dir, 'mcp-call.ts'), ...args],
     {
       cwd: dir,
-      // Only `silent` tests the deadline, so only it gets a short one. The other modes end as soon as stderr closes;
-      // their 30 s deadline is a watchdog that a slow start cannot reach.
+      // A short deadline on the other modes would turn a slow start into exit 124.
       env: {
         ...process.env,
         MODE: mode,

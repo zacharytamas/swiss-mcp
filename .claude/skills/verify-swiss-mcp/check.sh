@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Usage: check.sh <label> <response-file> <jq-filter> [jq options, e.g. --arg t "$T"]
-# Passes when the filter is true for the response. Appends PASS/FAIL to checks.txt beside the response.
 set -u
 [ $# -ge 3 ] || { echo 'usage: check.sh <label> <response-file> <jq-filter> [jq options]' >&2; exit 2; }
 label=$1 file=$2 filter=$3

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Read-only. Prints one line per check. Exit status is non-zero if any check FAILs; see SKILL.md for which FAIL blocks what.
 set -u
 cd "$(git rev-parse --show-toplevel)"
 fail=0

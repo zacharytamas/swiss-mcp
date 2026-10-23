@@ -1,8 +1,8 @@
 // Usage: bun scripts/mcp-call.ts [tool] [json-args]
-// With no tool, prints the server's tool list. Talks to src/main.ts (relative to the working directory) over stdio
-// exactly as an MCP client would. Exits 0 with a reply, 1 when the server gives no usable reply, 2 on arguments that
-// are not JSON, 124 after MCP_CALL_TIMEOUT_MS (default 300000), 130/143 on SIGINT/SIGTERM. Bun does not kill a child
-// when its parent dies, so every one of those paths kills the server first.
+// With no tool, prints the server's tool list. Talks to src/main.ts over stdio exactly as an MCP client would.
+// Exits 0 with a reply, 1 when the server gives no usable reply, 2 on arguments that are not JSON, 124 after
+// MCP_CALL_TIMEOUT_MS (default 300000), 130/143 on SIGINT/SIGTERM.
+// Bun does not kill a child when its parent dies, so every one of those paths kills the server first.
 const [tool, rawArgs = '{}'] = Bun.argv.slice(2)
 
 let args: unknown
@@ -31,7 +31,6 @@ setTimeout(() => {
 }, deadline).unref()
 
 const responses = new Map<number, (value: unknown) => void>()
-// Settles only by failing: on a line that is not JSON, or when the server closes stdout.
 const reading = (async (): Promise<never> => {
   let buffer = ''
   for await (const chunk of server.stdout.pipeThrough(

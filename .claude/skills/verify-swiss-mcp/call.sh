@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 # Usage: call.sh <feature-id> <tool> [json-args]
-# Calls one tool through a fresh stdio server and records it under .audit/verify/$VERIFY_RUN/<feature-id>/.
-# stdout: the response file path only. stderr: a one-line summary.
-# Exit 0: the response is a JSON-RPC reply (ok, isError or rpc-error). Exit 1: no usable reply (crash, timeout, bad JSON).
 set -u
 [ $# -ge 2 ] || { echo 'usage: call.sh <feature-id> <tool> [json-args]' >&2; exit 2; }
 [ -n "${VERIFY_RUN:-}" ] || { echo 'call.sh: export VERIFY_RUN first (see features/README.md)' >&2; exit 2; }
