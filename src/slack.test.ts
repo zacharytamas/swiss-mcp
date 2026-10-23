@@ -341,6 +341,21 @@ const channels: Record<string, Raw[]> = {
         },
       ],
     },
+    {
+      ts: ts(3, 26),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'context',
+          elements: [
+            { type: 'mrkdwn', text: '`' },
+            { type: 'mrkdwn', text: '<@UME>' },
+            { type: 'mrkdwn', text: '`' },
+          ],
+        },
+      ],
+    },
   ],
   CBUSY: [],
 }
@@ -853,6 +868,10 @@ describe('messages whose content is outside text', () => {
 
   test('literal backticks around a table cell do not hide the mention between them', async () => {
     expect(await textAt(ts(3, 25))).toBe('` | @Zach Tamas | `')
+  })
+
+  test('backticks in separate mrkdwn elements do not pair into one code span', async () => {
+    expect(await textAt(ts(3, 26))).toBe('` @Zach Tamas `')
   })
 })
 

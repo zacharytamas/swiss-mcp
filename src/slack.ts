@@ -201,12 +201,22 @@ const escapeText = (s: string) =>
     .replaceAll('>', '&gt;')
     .replaceAll('`', '&#96;')
 
+const CODE = '```[\\s\\S]*?```|`[^`\\n]+`'
+
+// Formatting can't cross Slack text objects, so a backtick that doesn't close a code span inside its own mrkdwn
+// fragment is literal. Escaping it keeps `render` from pairing it with a backtick from another fragment.
+const mrkdwn = (s: string) =>
+  s
+    .split(new RegExp(`(${CODE})`))
+    .map((part, i) => (i % 2 ? part : part.replaceAll('`', '&#96;')))
+    .join('')
+
 // Slack parses markup only in `mrkdwn` text objects. `plain_text` and rich text strings are literal, so `&`, `<`, `>`
 // and backticks are escaped, and `render` unescapes them without reading them as references.
 const textOf = (t: RawBlock['text']) => {
   if (t === undefined) return undefined
   if (typeof t === 'string') return escapeText(t)
-  return t.type === 'mrkdwn' ? t.text : escapeText(t.text)
+  return t.type === 'mrkdwn' ? mrkdwn(t.text) : escapeText(t.text)
 }
 
 // Inline rich text elements, rewritten into the <…> markup `render` already resolves in `text`.
@@ -309,10 +319,10 @@ const markupOf = (
             [f.title, f.value].filter(Boolean).join(': '),
           ),
           a.footer,
-          ...blocksText(a.blocks),
         ]
-          .filter(Boolean)
-          .join('\n') || a.fallback,
+          .flatMap((s) => (s ? [mrkdwn(s)] : []))
+          .concat(blocksText(a.blocks).filter((s) => s !== undefined))
+          .join('\n') || (a.fallback ? mrkdwn(a.fallback) : undefined),
     ),
     ...(m.files ?? []).map(
       (f) =>
@@ -424,7 +434,7 @@ const make = Effect.gen(function* () {
   // Rewrites Slack's <…> markup into readable text. A reference that can't be resolved keeps its ID.
   const render = (text: string) =>
     Effect.gen(function* () {
-      const token = /```[\s\S]*?```|`[^`\n]+`|<[^<>]+>/g
+      const token = new RegExp(`${CODE}|<[^<>]+>`, 'g')
       const tokens = [
         ...new Set(
           [...text.matchAll(token)]
