@@ -4,7 +4,7 @@ A client searches Slack with Slack search syntax, opens a thread or the channel 
 
 ## Sub-features
 
-- `read-search` returns matching messages with resolved authors and permalinks.
+- `read-search` returns matching messages, each with an author and a permalink. `from:@me` returns only the user's own messages, all with the same author ID.
 - `read-thread` returns a thread's parent and replies from a permalink, oldest first, with `hasMore: true` when the thread is longer than `limit` (default 200).
 - `read-channel` returns top-level messages in the permalink's channel at or before the permalink's message.
 - `read-resolve` resolves user IDs in bare and `<@U…>` form, and lists anything else under `unresolved` with the reason.
@@ -31,18 +31,18 @@ Checks: `search`, `thread`, `channel`, `resolve`, `not-found`, `regression`.
   ```sh
   F=slack-reading
   R=$($C $F slack_search_messages '{"query":"from:@me","limit":3}')
-  $X search "$R" 'ok and (sc.messages | length >= 1 and all(.[]; .fromMe and .author.name != .author.id))'
+  $X search "$R" 'ok and (sc.messages | length >= 1) and (sc.messages[0].author.id as $me | all(sc.messages[]; .fromMe and .author.id == $me))'
   P=$(jq -er '.result.structuredContent.messages[0].permalink' "$R")
   U=$(jq -er '.result.structuredContent.messages[0].author.id' "$R")
   CH=$(jq -er '.result.structuredContent.messages[0].channel.id' "$R")
   TS=$(jq -er '.result.structuredContent.messages[0].ts' "$R")
   ```
 
-- **Thread.** The linked message is one of the user's, so it must come back with `fromMe: true`. In a thread longer than 1000 messages it can fall past the limit; then `hasMore` is true and the linked-message part is unexercised. Markup rendering and author names are not checked here. Plain-text blocks keep literal `<@U…>` text, and an author Slack cannot look up keeps its ID as its name. `src/slack.test.ts` covers both with fixtures.
+- **Thread.** The linked message is one of the user's, so wherever it appears it must have `fromMe: true`. In a thread longer than 1000 messages it can fall past the limit. Then `hasMore` is true, the message is absent, and that part is unexercised. Markup rendering and author names are not checked here. Plain-text blocks keep literal `<@U…>` text, and an author Slack cannot look up keeps its ID as its name. `src/slack.test.ts` covers both with fixtures.
 
   ```sh
   R=$($C $F slack_read_thread "$(jq -cn --arg p "$P" '{permalink:$p,limit:1000}')")
-  $X thread "$R" 'ok and sc.channel.id == $ch and (sc.messages | length >= 1) and all(sc.messages[]; .channel.id == $ch) and (any(sc.messages[]; .ts == $ts and .fromMe) or sc.hasMore)' --arg ch "$CH" --arg ts "$TS"
+  $X thread "$R" 'ok and sc.channel.id == $ch and (sc.messages | length >= 1) and all(sc.messages[]; .channel.id == $ch) and all(sc.messages[] | select(.ts == $ts); .fromMe) and (any(sc.messages[]; .ts == $ts) or sc.hasMore)' --arg ch "$CH" --arg ts "$TS"
   ```
 
 - **Channel.** Every message is in the same channel and no later than the permalink's message. Equal-length Slack `ts` strings compare correctly as strings.
@@ -82,4 +82,4 @@ Checks: `search`, `thread`, `channel`, `resolve`, `not-found`, `regression`.
 - Search follows the search filters in the user's Slack preferences, so results can differ from what Slack's UI shows with other filters.
 - Slack indexes new messages for search after a delay. A message posted seconds ago may not be found yet.
 - `slack_read_channel` returns top-level messages only. Replies need `slack_read_thread`.
-- **search** requires `author.name != author.id` because every result is the user's own message, and the token can always look up its own user. Other authors can legitimately keep their ID as their name when Slack cannot look them up, so no other check compares the two.
+- No check compares `author.name` with `author.id`. When Slack cannot look up a user, the server keeps the ID as the name, and that can happen for any author, the user included.
