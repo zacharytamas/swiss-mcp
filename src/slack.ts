@@ -410,12 +410,19 @@ const make = Effect.gen(function* () {
   // Rewrites Slack's <…> markup into readable text. A reference that can't be resolved keeps its ID.
   const render = (text: string) =>
     Effect.gen(function* () {
-      const tokens = [...new Set(text.match(/<[^<>]+>/g) ?? [])]
+      const token = /```[\s\S]*?```|`[^`\n]+`|<[^<>]+>/g
+      const tokens = [
+        ...new Set(
+          [...text.matchAll(token)]
+            .map((m) => m[0])
+            .filter((m) => m.startsWith('<')),
+        ),
+      ]
       const replacements = yield* Effect.forEach(
         tokens,
-        (token) =>
+        (ref) =>
           Effect.gen(function* () {
-            const [target = '', ...rest] = token.slice(1, -1).split('|')
+            const [target = '', ...rest] = ref.slice(1, -1).split('|')
             const label = rest.length ? rest.join('|') : undefined
             if (target.startsWith('@')) {
               return `@${label ?? (yield* userName(target.slice(1)))}`
@@ -446,10 +453,10 @@ const make = Effect.gen(function* () {
           }),
         { concurrency: 4 },
       )
-      let out = text
-      tokens.forEach((token, i) => {
-        out = out.replaceAll(token, replacements[i] ?? token)
-      })
+      const resolved = new Map(tokens.map((t, i) => [t, replacements[i] ?? t]))
+      const out = text.replace(token, (m) =>
+        m.startsWith('<') ? (resolved.get(m) ?? m) : m,
+      )
       return out
         .replaceAll('&lt;', '<')
         .replaceAll('&gt;', '>')

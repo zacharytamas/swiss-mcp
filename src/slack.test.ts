@@ -262,6 +262,27 @@ const channels: Record<string, Raw[]> = {
         },
       ],
     },
+    {
+      ts: ts(3, 21),
+      user: 'UANN',
+      text: 'Ping <@UME> but `<@UME>` stays',
+    },
+    {
+      ts: ts(3, 22),
+      user: 'UANN',
+      text: '```\n<@UME>\n```',
+    },
+    {
+      ts: ts(3, 23),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: 'see `<@UME>`' },
+        },
+      ],
+    },
   ],
   CBUSY: [],
 }
@@ -752,6 +773,18 @@ describe('messages whose content is outside text', () => {
     expect(await textAt(ts(3, 20))).toBe(
       '[image: degraded_performance] API Requests\n[image: Chart <1h>]\n[video: Demo <v2>]',
     )
+  })
+
+  test('a reference inside inline code stays as written while one outside resolves', async () => {
+    expect(await textAt(ts(3, 21))).toBe('Ping @Zach Tamas but `<@UME>` stays')
+  })
+
+  test('a reference inside a fenced code block stays as written', async () => {
+    expect(await textAt(ts(3, 22))).toBe('```\n<@UME>\n```')
+  })
+
+  test('a reference inside code in an mrkdwn section stays as written', async () => {
+    expect(await textAt(ts(3, 23))).toBe('see `<@UME>`')
   })
 })
 
