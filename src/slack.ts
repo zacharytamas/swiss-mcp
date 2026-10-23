@@ -552,8 +552,19 @@ const make = Effect.gen(function* () {
           }
         }
       }
+      // `parse` drops the line break on each side of a fence or quote, so it comes back between it and its neighbours.
+      const isBlock = (n: MrkdwnNode | undefined) =>
+        n?.type === 'preformatted' || n?.type === 'quote'
       return parts
-        .map((part) => part.map(show).join(''))
+        .map((part) =>
+          part
+            .map(
+              (n, i) =>
+                (i && (isBlock(n) || isBlock(part[i - 1])) ? '\n' : '') +
+                show(n),
+            )
+            .join(''),
+        )
         .map((s) => s.trim())
         .filter(Boolean)
         .join('\n')

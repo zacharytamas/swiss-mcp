@@ -371,6 +371,16 @@ const channels: Record<string, Raw[]> = {
       user: 'UANN',
       text: 'glyph \u{E000} <@UME>',
     },
+    {
+      ts: ts(3, 30),
+      user: 'UANN',
+      text: 'before <@UME>\n```\n<@UME>\n```\nafter',
+    },
+    {
+      ts: ts(3, 31),
+      user: 'UANN',
+      text: 'before\n> one <@UME>\n> two\nafter',
+    },
   ],
   CBUSY: [],
 }
@@ -899,6 +909,18 @@ describe('messages whose content is outside text', () => {
 
   test('a private-use character in top-level text stays and the mention resolves', async () => {
     expect(await textAt(ts(3, 29))).toBe('glyph \u{E000} @Zach Tamas')
+  })
+
+  test('a fenced block keeps its own lines between the prose around it', async () => {
+    expect(await textAt(ts(3, 30))).toBe(
+      'before @Zach Tamas\n```\n<@UME>\n```\nafter',
+    )
+  })
+
+  test('a quote keeps its own lines between the prose around it', async () => {
+    expect(await textAt(ts(3, 31))).toBe(
+      'before\n> one @Zach Tamas\n> two\nafter',
+    )
   })
 })
 
