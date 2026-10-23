@@ -228,6 +228,8 @@ const inline = new Map<string, (e: RawBlock) => string>([
       return Number.isNaN(date.getTime()) ? '' : date.toISOString()
     },
   ],
+  ['raw_text', (e) => textOf(e.text) ?? ''],
+  ['raw_number', (e) => (e.value === undefined ? '' : String(e.value))],
 ])
 const INLINE_CONTAINERS = new Set([
   'rich_text_section',
@@ -271,6 +273,11 @@ const blockText = new Map<string, (b: RawBlock) => string | undefined>([
   ['image', image],
   ['video', (b) => b.title && `[video: ${textOf(b.title)}]`],
   ['rich_text', richText],
+  [
+    'table',
+    (b) =>
+      (b.rows ?? []).map((row) => row.map(richText).join(' | ')).join('\n'),
+  ],
 ])
 
 const blocksText = (blocks: ReadonlyArray<RawBlock> | null | undefined) =>

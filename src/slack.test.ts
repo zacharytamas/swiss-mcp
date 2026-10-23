@@ -283,6 +283,38 @@ const channels: Record<string, Raw[]> = {
         },
       ],
     },
+    {
+      ts: ts(3, 24),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'table',
+          rows: [
+            [{ type: 'raw_text', text: 'Item' }],
+            [
+              { type: 'raw_text', text: 'Widgets' },
+              { type: 'raw_number', value: 12 },
+              {
+                type: 'rich_text',
+                elements: [
+                  {
+                    type: 'rich_text_section',
+                    elements: [
+                      {
+                        type: 'link',
+                        url: 'https://example.com',
+                        text: 'spec',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          ],
+        },
+      ],
+    },
   ],
   CBUSY: [],
 }
@@ -785,6 +817,12 @@ describe('messages whose content is outside text', () => {
 
   test('a reference inside code in an mrkdwn section stays as written', async () => {
     expect(await textAt(ts(3, 23))).toBe('see `<@UME>`')
+  })
+
+  test('a table block shows its cell text, one row per line', async () => {
+    expect(await textAt(ts(3, 24))).toBe(
+      'Item\nWidgets | 12 | [spec](https://example.com)',
+    )
   })
 })
 
