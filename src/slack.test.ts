@@ -127,7 +127,11 @@ const channels: Record<string, Raw[]> = {
         {
           type: 'actions',
           elements: [
-            { type: 'button', text: { type: 'plain_text', text: 'Subscribe' } },
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: 'Subscribe' },
+              value: 'transition',
+            },
           ],
         },
       ],
@@ -261,6 +265,135 @@ const channels: Record<string, Raw[]> = {
           alt_text: 'Product demo',
         },
       ],
+    },
+    {
+      ts: ts(3, 21),
+      user: 'UANN',
+      text: 'Ping <@UME> but `<@UME>` stays',
+    },
+    {
+      ts: ts(3, 22),
+      user: 'UANN',
+      text: '```\n<@UME>\n```',
+    },
+    {
+      ts: ts(3, 23),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: 'see `<@UME>`' },
+        },
+      ],
+    },
+    {
+      ts: ts(3, 24),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'table',
+          rows: [
+            [{ type: 'raw_text', text: 'Item' }],
+            [
+              { type: 'raw_text', text: 'Widgets' },
+              { type: 'raw_number', value: 12 },
+              { type: 'raw_number', value: 1234, text: '1,234' },
+              {
+                type: 'rich_text',
+                elements: [
+                  {
+                    type: 'rich_text_section',
+                    elements: [
+                      {
+                        type: 'link',
+                        url: 'https://example.com',
+                        text: 'spec',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          ],
+        },
+      ],
+    },
+    {
+      ts: ts(3, 25),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'table',
+          rows: [
+            [
+              { type: 'raw_text', text: '`' },
+              {
+                type: 'rich_text',
+                elements: [
+                  {
+                    type: 'rich_text_section',
+                    elements: [{ type: 'user', user_id: 'UME' }],
+                  },
+                ],
+              },
+              { type: 'raw_text', text: '`' },
+            ],
+          ],
+        },
+      ],
+    },
+    {
+      ts: ts(3, 26),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'context',
+          elements: [
+            { type: 'mrkdwn', text: '`' },
+            { type: 'mrkdwn', text: '<@UME>' },
+            { type: 'mrkdwn', text: '`' },
+          ],
+        },
+      ],
+    },
+    {
+      ts: ts(3, 27),
+      user: 'UANN',
+      text: 'Write &#96;code&#96; for <@UME>',
+    },
+    {
+      ts: ts(3, 28),
+      user: 'UANN',
+      text: 'x`<@UME>`y and <@UME>',
+    },
+    {
+      ts: ts(3, 29),
+      user: 'UANN',
+      text: 'glyph \u{E000} <@UME>',
+    },
+    {
+      ts: ts(3, 30),
+      user: 'UANN',
+      text: 'before <@UME>\n```\n<@UME>\n```\nafter',
+    },
+    {
+      ts: ts(3, 31),
+      user: 'UANN',
+      text: 'before\n> one <@UME>\n> two\nafter',
+    },
+    {
+      ts: ts(3, 32),
+      user: 'UANN',
+      text: '    indented <@UME>\n',
+    },
+    {
+      ts: ts(3, 33),
+      user: 'UANN',
+      text: 'see `<http://github.com/ruby/json|github.com/ruby/json>` and `<https://ex.test/a>` or `<mailto:bob@ex.test>` for <@UME>\n```pulled "<http://ecr.test/app:v1|ecr.test/app:v1>"```',
     },
   ],
   CBUSY: [],
@@ -751,6 +884,66 @@ describe('messages whose content is outside text', () => {
   test('images and videos show their alt text or title, in context and as blocks', async () => {
     expect(await textAt(ts(3, 20))).toBe(
       '[image: degraded_performance] API Requests\n[image: Chart <1h>]\n[video: Demo <v2>]',
+    )
+  })
+
+  test('a reference inside inline code stays as written while one outside resolves', async () => {
+    expect(await textAt(ts(3, 21))).toBe('Ping @Zach Tamas but `<@UME>` stays')
+  })
+
+  test('a reference inside a fenced code block stays as written', async () => {
+    expect(await textAt(ts(3, 22))).toBe('```\n<@UME>\n```')
+  })
+
+  test('a reference inside code in an mrkdwn section stays as written', async () => {
+    expect(await textAt(ts(3, 23))).toBe('see `<@UME>`')
+  })
+
+  test('a table block shows its cell text, one row per line', async () => {
+    expect(await textAt(ts(3, 24))).toBe(
+      'Item\nWidgets | 12 | 1,234 | [spec](https://example.com)',
+    )
+  })
+
+  test('literal backticks around a table cell do not hide the mention between them', async () => {
+    expect(await textAt(ts(3, 25))).toBe('` | @Zach Tamas | `')
+  })
+
+  test('backticks in separate mrkdwn elements do not pair into one code span', async () => {
+    expect(await textAt(ts(3, 26))).toBe('` @Zach Tamas `')
+  })
+
+  test('a literal &#96; in top-level text stays as written', async () => {
+    expect(await textAt(ts(3, 27))).toBe('Write &#96;code&#96; for @Zach Tamas')
+  })
+
+  test('inline code next to text does not swallow the mention after it', async () => {
+    expect(await textAt(ts(3, 28))).toBe('x`<@UME>`y and @Zach Tamas')
+  })
+
+  test('a private-use character in top-level text stays and the mention resolves', async () => {
+    expect(await textAt(ts(3, 29))).toBe('glyph \u{E000} @Zach Tamas')
+  })
+
+  test('a fenced block keeps its own lines between the prose around it', async () => {
+    expect(await textAt(ts(3, 30))).toBe(
+      'before @Zach Tamas\n```\n<@UME>\n```\nafter',
+    )
+  })
+
+  test('a quote keeps its own lines between the prose around it', async () => {
+    expect(await textAt(ts(3, 31))).toBe(
+      'before\n> one @Zach Tamas\n> two\nafter',
+    )
+  })
+
+  test('top-level text keeps its outer whitespace', async () => {
+    expect(await textAt(ts(3, 32))).toBe('    indented @Zach Tamas\n')
+  })
+
+  test('a link Slack auto-linked inside code shows as the text Slack displays', async () => {
+    expect(await textAt(ts(3, 33))).toBe(
+      'see `github.com/ruby/json` and `https://ex.test/a` or `bob@ex.test` for @Zach Tamas\n```\npulled "ecr.test/app:v1"\n```',
     )
   })
 })
