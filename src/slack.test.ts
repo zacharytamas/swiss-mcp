@@ -315,6 +315,31 @@ const channels: Record<string, Raw[]> = {
         },
       ],
     },
+    {
+      ts: ts(3, 25),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'table',
+          rows: [
+            [
+              { type: 'raw_text', text: '`' },
+              {
+                type: 'rich_text',
+                elements: [
+                  {
+                    type: 'rich_text_section',
+                    elements: [{ type: 'user', user_id: 'UME' }],
+                  },
+                ],
+              },
+              { type: 'raw_text', text: '`' },
+            ],
+          ],
+        },
+      ],
+    },
   ],
   CBUSY: [],
 }
@@ -823,6 +848,10 @@ describe('messages whose content is outside text', () => {
     expect(await textAt(ts(3, 24))).toBe(
       'Item\nWidgets | 12 | [spec](https://example.com)',
     )
+  })
+
+  test('literal backticks around a table cell do not hide the mention between them', async () => {
+    expect(await textAt(ts(3, 25))).toBe('` | @Zach Tamas | `')
   })
 })
 

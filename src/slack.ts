@@ -195,10 +195,14 @@ const kindOf = (c: {
   c.is_im ? 'dm' : c.is_mpim ? 'group_dm' : c.is_private ? 'private' : 'channel'
 
 const escapeText = (s: string) =>
-  s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('`', '&#96;')
 
-// Slack parses markup only in `mrkdwn` text objects. `plain_text` and rich text strings are literal, so they are
-// escaped the way Slack escapes `text`, and `render` unescapes them without reading them as references.
+// Slack parses markup only in `mrkdwn` text objects. `plain_text` and rich text strings are literal, so `&`, `<`, `>`
+// and backticks are escaped, and `render` unescapes them without reading them as references.
 const textOf = (t: RawBlock['text']) => {
   if (t === undefined) return undefined
   if (typeof t === 'string') return escapeText(t)
@@ -467,6 +471,7 @@ const make = Effect.gen(function* () {
       return out
         .replaceAll('&lt;', '<')
         .replaceAll('&gt;', '>')
+        .replaceAll('&#96;', '`')
         .replaceAll('&amp;', '&')
     })
 
