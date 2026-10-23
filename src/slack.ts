@@ -202,7 +202,67 @@ const kindOf = (c: {
 
 type Nodes = ReadonlyArray<MrkdwnNode>
 const text = (value: string): InlineNode => ({ type: 'text', value })
-const parsed = (s: string): Nodes => parse(s, { verbatim: true }).children
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>' }
+const decoded = (s: string) =>
+  s.replace(/&(amp|lt|gt);/g, (m, name: string) => ENTITIES[name] ?? m)
+// Slack auto-links URLs even inside code and shows them as their label, so code keeps every other `<…>` as written
+// but shows a link the way Slack draws it. Only a raw `<` starts a link; an escaped `&lt;` is text the user typed.
+const unlinked = (code: string) =>
+  code.replace(
+    /<((?:https?|mailto):[^<>|]*)(?:\|([^<>]*))?>/g,
+    (_, url: string, label?: string) => label ?? url.replace(/^mailto:/, ''),
+  )
+const settledInline = (node: InlineNode): InlineNode => {
+  switch (node.type) {
+    case 'text':
+      return { ...node, value: decoded(node.value) }
+    case 'code':
+      return { ...node, value: decoded(unlinked(node.value)) }
+    case 'bold':
+    case 'italic':
+    case 'strike':
+      return { ...node, children: node.children.map(settledInline) }
+    case 'link':
+      return {
+        ...node,
+        url: decoded(node.url),
+        ...(node.children
+          ? { children: node.children.map(settledInline) }
+          : {}),
+      }
+    case 'user':
+    case 'channel':
+    case 'usergroup':
+    case 'broadcast':
+      return node.label === undefined
+        ? node
+        : { ...node, label: decoded(node.label) }
+    case 'date':
+      return { ...node, fallback: decoded(node.fallback) }
+    case 'emoji':
+      return node
+  }
+}
+const settled = (node: MrkdwnNode): MrkdwnNode => {
+  switch (node.type) {
+    case 'preformatted':
+      return { ...node, value: decoded(unlinked(node.value)) }
+    case 'quote':
+      return { ...node, children: node.children.map(settledInline) }
+    default:
+      return settledInline(node)
+  }
+}
+// `parse` decodes entities inside code before anything can tell `<` from `&lt;`. Doubling every entity first leaves
+// its decoding pass undoing only the doubling, so `unlinked` sees raw `<` only where Slack put a real token. A `&gt;`
+// that opens a line stays single, since that is the quote marker the parser has to see.
+const parsed = (s: string): Nodes =>
+  parse(
+    s.replace(/(^|\n)((?:&gt;)+)|&(?=(?:amp|lt|gt);)/g, (m, _nl, quote) =>
+      quote === undefined ? '&amp;' : m,
+    ),
+    { verbatim: true },
+  ).children.map(settled)
 const literal = (s: string | undefined): Nodes =>
   s === undefined ? [] : [text(s)]
 
@@ -518,22 +578,14 @@ const make = Effect.gen(function* () {
         : []
       const handle = (id: string) =>
         groups.find((g) => g.id === id)?.handle ?? id
-      // Slack auto-links URLs even inside code and shows them as their label, so code keeps every other `<…>` as
-      // written but shows a link the way Slack draws it.
-      const unlinked = (code: string) =>
-        code.replace(
-          /<((?:https?|mailto):[^<>|]*)(?:\|([^<>]*))?>/g,
-          (_, url: string, label?: string) =>
-            label ?? url.replace(/^mailto:/, ''),
-        )
       const show = (node: MrkdwnNode): string => {
         switch (node.type) {
           case 'text':
             return node.value
           case 'code':
-            return `\`${unlinked(node.value)}\``
+            return `\`${node.value}\``
           case 'preformatted':
-            return `\`\`\`\n${unlinked(node.value)}\n\`\`\``
+            return `\`\`\`\n${node.value}\n\`\`\``
           case 'bold':
             return `*${node.children.map(show).join('')}*`
           case 'italic':
