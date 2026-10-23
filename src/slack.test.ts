@@ -381,6 +381,11 @@ const channels: Record<string, Raw[]> = {
       user: 'UANN',
       text: 'before\n> one <@UME>\n> two\nafter',
     },
+    {
+      ts: ts(3, 32),
+      user: 'UANN',
+      text: '    indented <@UME>\n',
+    },
   ],
   CBUSY: [],
 }
@@ -921,6 +926,10 @@ describe('messages whose content is outside text', () => {
     expect(await textAt(ts(3, 31))).toBe(
       'before\n> one @Zach Tamas\n> two\nafter',
     )
+  })
+
+  test('top-level text keeps its outer whitespace', async () => {
+    expect(await textAt(ts(3, 32))).toBe('    indented @Zach Tamas\n')
   })
 })
 

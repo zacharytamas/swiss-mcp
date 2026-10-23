@@ -330,6 +330,16 @@ const blocksText = (blocks: ReadonlyArray<RawBlock> | null | undefined) =>
 const blank = (nodes: Nodes) =>
   nodes.every((n) => n.type === 'text' && n.value.trim() === '')
 
+// Fallback parts are pieced together from blocks and attachments, so their edge whitespace is an artifact.
+const trimmed = (nodes: Nodes): Nodes =>
+  nodes.map((n, i) => {
+    if (n.type !== 'text') return n
+    let value = n.value
+    if (i === 0) value = value.trimStart()
+    if (i === nodes.length - 1) value = value.trimEnd()
+    return text(value)
+  })
+
 // A message's readable parts. Integrations and uploads often leave `text` empty and put the content in blocks,
 // attachments or files, so those stand in only when `text` is empty.
 const markupOf = (
@@ -365,7 +375,9 @@ const markupOf = (
         ),
       ],
     ),
-  ].filter((nodes): nodes is Nodes => nodes !== undefined && !blank(nodes))
+  ]
+    .filter((nodes): nodes is Nodes => nodes !== undefined && !blank(nodes))
+    .map(trimmed)
 }
 
 const make = Effect.gen(function* () {
@@ -565,7 +577,6 @@ const make = Effect.gen(function* () {
             )
             .join(''),
         )
-        .map((s) => s.trim())
         .filter(Boolean)
         .join('\n')
     })
