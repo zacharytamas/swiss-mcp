@@ -523,7 +523,8 @@ const make = Effect.gen(function* () {
       const unlinked = (code: string) =>
         code.replace(
           /<((?:https?|mailto):[^<>|]*)(?:\|([^<>]*))?>/g,
-          (_, url: string, label?: string) => label ?? url,
+          (_, url: string, label?: string) =>
+            label ?? url.replace(/^mailto:/, ''),
         )
       const show = (node: MrkdwnNode): string => {
         switch (node.type) {

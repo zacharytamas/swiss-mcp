@@ -393,7 +393,7 @@ const channels: Record<string, Raw[]> = {
     {
       ts: ts(3, 33),
       user: 'UANN',
-      text: 'see `<http://github.com/ruby/json|github.com/ruby/json>` and `<https://ex.test/a>` for <@UME>\n```pulled "<http://ecr.test/app:v1|ecr.test/app:v1>"```',
+      text: 'see `<http://github.com/ruby/json|github.com/ruby/json>` and `<https://ex.test/a>` or `<mailto:bob@ex.test>` for <@UME>\n```pulled "<http://ecr.test/app:v1|ecr.test/app:v1>"```',
     },
   ],
   CBUSY: [],
@@ -943,7 +943,7 @@ describe('messages whose content is outside text', () => {
 
   test('a link Slack auto-linked inside code shows as the text Slack displays', async () => {
     expect(await textAt(ts(3, 33))).toBe(
-      'see `github.com/ruby/json` and `https://ex.test/a` for @Zach Tamas\n```\npulled "ecr.test/app:v1"\n```',
+      'see `github.com/ruby/json` and `https://ex.test/a` or `bob@ex.test` for @Zach Tamas\n```\npulled "ecr.test/app:v1"\n```',
     )
   })
 })
