@@ -194,12 +194,16 @@ const kindOf = (c: {
 }): ChannelRef['kind'] =>
   c.is_im ? 'dm' : c.is_mpim ? 'group_dm' : c.is_private ? 'private' : 'channel'
 
+// A literal backtick, held out of `render`'s code-span scan. A private-use character, so unlike an entity such as
+// `&#96;` it can't collide with text Slack sends.
+const BACKTICK = '\u{E000}'
+
 const escapeText = (s: string) =>
   s
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
-    .replaceAll('`', '&#96;')
+    .replaceAll('`', BACKTICK)
 
 const CODE = '```[\\s\\S]*?```|`[^`\\n]+`'
 
@@ -208,7 +212,7 @@ const CODE = '```[\\s\\S]*?```|`[^`\\n]+`'
 const mrkdwn = (s: string) =>
   s
     .split(new RegExp(`(${CODE})`))
-    .map((part, i) => (i % 2 ? part : part.replaceAll('`', '&#96;')))
+    .map((part, i) => (i % 2 ? part : part.replaceAll('`', BACKTICK)))
     .join('')
 
 // Slack parses markup only in `mrkdwn` text objects. `plain_text` and rich text strings are literal, so `&`, `<`, `>`
@@ -484,7 +488,7 @@ const make = Effect.gen(function* () {
       return out
         .replaceAll('&lt;', '<')
         .replaceAll('&gt;', '>')
-        .replaceAll('&#96;', '`')
+        .replaceAll(BACKTICK, '`')
         .replaceAll('&amp;', '&')
     })
 

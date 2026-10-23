@@ -356,6 +356,11 @@ const channels: Record<string, Raw[]> = {
         },
       ],
     },
+    {
+      ts: ts(3, 27),
+      user: 'UANN',
+      text: 'Write &#96;code&#96; for <@UME>',
+    },
   ],
   CBUSY: [],
 }
@@ -872,6 +877,10 @@ describe('messages whose content is outside text', () => {
 
   test('backticks in separate mrkdwn elements do not pair into one code span', async () => {
     expect(await textAt(ts(3, 26))).toBe('` @Zach Tamas `')
+  })
+
+  test('a literal &#96; in top-level text stays as written', async () => {
+    expect(await textAt(ts(3, 27))).toBe('Write &#96;code&#96; for @Zach Tamas')
   })
 })
 
