@@ -127,7 +127,11 @@ const channels: Record<string, Raw[]> = {
         {
           type: 'actions',
           elements: [
-            { type: 'button', text: { type: 'plain_text', text: 'Subscribe' } },
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: 'Subscribe' },
+              value: 'transition',
+            },
           ],
         },
       ],
@@ -385,6 +389,11 @@ const channels: Record<string, Raw[]> = {
       ts: ts(3, 32),
       user: 'UANN',
       text: '    indented <@UME>\n',
+    },
+    {
+      ts: ts(3, 33),
+      user: 'UANN',
+      text: 'see `<http://github.com/ruby/json|github.com/ruby/json>` and `<https://ex.test/a>` for <@UME>\n```pulled "<http://ecr.test/app:v1|ecr.test/app:v1>"```',
     },
   ],
   CBUSY: [],
@@ -930,6 +939,12 @@ describe('messages whose content is outside text', () => {
 
   test('top-level text keeps its outer whitespace', async () => {
     expect(await textAt(ts(3, 32))).toBe('    indented @Zach Tamas\n')
+  })
+
+  test('a link Slack auto-linked inside code shows as the text Slack displays', async () => {
+    expect(await textAt(ts(3, 33))).toBe(
+      'see `github.com/ruby/json` and `https://ex.test/a` for @Zach Tamas\n```\npulled "ecr.test/app:v1"\n```',
+    )
   })
 })
 

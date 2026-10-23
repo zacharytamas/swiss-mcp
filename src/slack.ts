@@ -518,14 +518,21 @@ const make = Effect.gen(function* () {
         : []
       const handle = (id: string) =>
         groups.find((g) => g.id === id)?.handle ?? id
+      // Slack auto-links URLs even inside code and shows them as their label, so code keeps every other `<…>` as
+      // written but shows a link the way Slack draws it.
+      const unlinked = (code: string) =>
+        code.replace(
+          /<((?:https?|mailto):[^<>|]*)(?:\|([^<>]*))?>/g,
+          (_, url: string, label?: string) => label ?? url,
+        )
       const show = (node: MrkdwnNode): string => {
         switch (node.type) {
           case 'text':
             return node.value
           case 'code':
-            return `\`${node.value}\``
+            return `\`${unlinked(node.value)}\``
           case 'preformatted':
-            return `\`\`\`\n${node.value}\n\`\`\``
+            return `\`\`\`\n${unlinked(node.value)}\n\`\`\``
           case 'bold':
             return `*${node.children.map(show).join('')}*`
           case 'italic':

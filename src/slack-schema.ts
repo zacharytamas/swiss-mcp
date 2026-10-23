@@ -22,7 +22,7 @@ export interface RawBlock {
   readonly fields?: ReadonlyArray<TextObject> | undefined
   readonly elements?: ReadonlyArray<RawBlock> | undefined
   readonly rows?: ReadonlyArray<ReadonlyArray<RawBlock>> | undefined
-  readonly value?: number | undefined
+  readonly value?: number | string | undefined
   readonly url?: string | undefined
   readonly user_id?: string | undefined
   readonly channel_id?: string | undefined
@@ -46,7 +46,7 @@ const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
       Schema.Array(Schema.suspend((): Schema.Codec<RawBlock> => RawBlock)),
     ),
   ),
-  value: Schema.optional(Schema.Number),
+  value: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
   url: Schema.optional(Schema.String),
   user_id: Schema.optional(Schema.String),
   channel_id: Schema.optional(Schema.String),
