@@ -233,7 +233,10 @@ const inline = new Map<string, (e: RawBlock) => string>([
     },
   ],
   ['raw_text', (e) => textOf(e.text) ?? ''],
-  ['raw_number', (e) => (e.value === undefined ? '' : String(e.value))],
+  [
+    'raw_number',
+    (e) => textOf(e.text) ?? (e.value === undefined ? '' : String(e.value)),
+  ],
 ])
 const INLINE_CONTAINERS = new Set([
   'rich_text_section',

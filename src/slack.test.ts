@@ -295,6 +295,7 @@ const channels: Record<string, Raw[]> = {
             [
               { type: 'raw_text', text: 'Widgets' },
               { type: 'raw_number', value: 12 },
+              { type: 'raw_number', value: 1234, text: '1,234' },
               {
                 type: 'rich_text',
                 elements: [
@@ -846,7 +847,7 @@ describe('messages whose content is outside text', () => {
 
   test('a table block shows its cell text, one row per line', async () => {
     expect(await textAt(ts(3, 24))).toBe(
-      'Item\nWidgets | 12 | [spec](https://example.com)',
+      'Item\nWidgets | 12 | 1,234 | [spec](https://example.com)',
     )
   })
 
