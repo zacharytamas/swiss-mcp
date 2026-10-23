@@ -395,6 +395,11 @@ const channels: Record<string, Raw[]> = {
       user: 'UANN',
       text: 'see `<http://github.com/ruby/json|github.com/ruby/json>` and `<https://ex.test/a>` or `<mailto:bob@ex.test>` for <@UME>\n```pulled "<http://ecr.test/app:v1|ecr.test/app:v1>"```',
     },
+    {
+      ts: ts(3, 34),
+      user: 'UANN',
+      text: 'typed `&lt;https://ex.test/a|literal&gt;` and `&amp;lt;b&amp;gt;`\n```&lt;mailto:a@b.c&gt;```',
+    },
   ],
   CBUSY: [],
 }
@@ -825,7 +830,10 @@ test('slack_read_channel names an integration post with a null user after its us
 
 describe('messages whose content is outside text', () => {
   const textAt = async (at: string) => {
-    const result = await callTool('slack_read_channel', { channel: 'CBLOCKS' })
+    const result = await callTool('slack_read_channel', {
+      channel: 'CBLOCKS',
+      limit: 200,
+    })
     return result.structuredContent.messages.find(
       (m: { ts: string }) => m.ts === at,
     ).text
@@ -944,6 +952,12 @@ describe('messages whose content is outside text', () => {
   test('a link Slack auto-linked inside code shows as the text Slack displays', async () => {
     expect(await textAt(ts(3, 33))).toBe(
       'see `github.com/ruby/json` and `https://ex.test/a` or `bob@ex.test` for @Zach Tamas\n```\npulled "ecr.test/app:v1"\n```',
+    )
+  })
+
+  test('link markup typed as escaped text inside code stays as written', async () => {
+    expect(await textAt(ts(3, 34))).toBe(
+      'typed `<https://ex.test/a|literal>` and `&lt;b&gt;`\n```\n<mailto:a@b.c>\n```',
     )
   })
 })
