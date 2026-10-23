@@ -5,7 +5,7 @@ A client searches Slack with Slack search syntax, opens a thread or the channel 
 ## Sub-features
 
 - `read-search` returns matching messages with resolved authors and permalinks.
-- `read-thread` returns a thread's parent and replies from a permalink, with no raw `<@U…>`-style markup left in any `text`.
+- `read-thread` returns a thread's parent and replies from a permalink, including the linked message, with every author resolved to a name.
 - `read-channel` returns top-level messages in the permalink's channel at or before the permalink's message.
 - `read-resolve` resolves user IDs in bare and `<@U…>` form, and lists anything else under `unresolved` with the reason.
 - `read-not-found` fails with `SlackApiError:channel_not_found` for a conversation that does not exist.
@@ -38,11 +38,11 @@ Checks: `search`, `thread`, `channel`, `resolve`, `not-found`, `regression`.
   TS=$(jq -er '.result.structuredContent.messages[0].ts' "$R")
   ```
 
-- **Thread.**
+- **Thread.** Markup rendering is not checked here. Literal `<@U…>` text from plain-text blocks is correct output, and `src/slack.test.ts` covers rendering with fixtures.
 
   ```sh
   R=$($C $F slack_read_thread "$(jq -cn --arg p "$P" '{permalink:$p}')")
-  $X thread "$R" 'ok and (sc.messages | length >= 1 and all(.[]; .text | test("<[@#!][A-Z0-9^]") | not))'
+  $X thread "$R" 'ok and sc.channel.id == $ch and any(sc.messages[]; .ts == $ts) and all(sc.messages[]; .channel.id == $ch and .author.name != .author.id)' --arg ch "$CH" --arg ts "$TS"
   ```
 
 - **Channel.** Every message is in the same channel and no later than the permalink's message. Equal-length Slack `ts` strings compare correctly as strings.
