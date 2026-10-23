@@ -361,6 +361,16 @@ const channels: Record<string, Raw[]> = {
       user: 'UANN',
       text: 'Write &#96;code&#96; for <@UME>',
     },
+    {
+      ts: ts(3, 28),
+      user: 'UANN',
+      text: 'x`<@UME>`y and <@UME>',
+    },
+    {
+      ts: ts(3, 29),
+      user: 'UANN',
+      text: 'glyph \u{E000} <@UME>',
+    },
   ],
   CBUSY: [],
 }
@@ -881,6 +891,14 @@ describe('messages whose content is outside text', () => {
 
   test('a literal &#96; in top-level text stays as written', async () => {
     expect(await textAt(ts(3, 27))).toBe('Write &#96;code&#96; for @Zach Tamas')
+  })
+
+  test('inline code next to text does not swallow the mention after it', async () => {
+    expect(await textAt(ts(3, 28))).toBe('x`<@UME>`y and @Zach Tamas')
+  })
+
+  test('a private-use character in top-level text stays and the mention resolves', async () => {
+    expect(await textAt(ts(3, 29))).toBe('glyph \u{E000} @Zach Tamas')
   })
 })
 

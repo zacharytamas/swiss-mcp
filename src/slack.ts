@@ -1,4 +1,10 @@
 import {
+  type InlineNode,
+  type MrkdwnNode,
+  parse,
+} from '@nkootstra/block-kit/mrkdwn'
+
+import {
   Config,
   Context,
   Effect,
@@ -194,62 +200,62 @@ const kindOf = (c: {
 }): ChannelRef['kind'] =>
   c.is_im ? 'dm' : c.is_mpim ? 'group_dm' : c.is_private ? 'private' : 'channel'
 
-// A literal backtick, held out of `render`'s code-span scan. A private-use character, so unlike an entity such as
-// `&#96;` it can't collide with text Slack sends.
-const BACKTICK = '\u{E000}'
+type Nodes = ReadonlyArray<MrkdwnNode>
+const text = (value: string): InlineNode => ({ type: 'text', value })
+const parsed = (s: string): Nodes => parse(s, { verbatim: true }).children
+const literal = (s: string | undefined): Nodes =>
+  s === undefined ? [] : [text(s)]
 
-const escapeText = (s: string) =>
-  s
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('`', BACKTICK)
-
-const CODE = '```[\\s\\S]*?```|`[^`\\n]+`'
-
-// Formatting can't cross Slack text objects, so a backtick that doesn't close a code span inside its own mrkdwn
-// fragment is literal. Escaping it keeps `render` from pairing it with a backtick from another fragment.
-const mrkdwn = (s: string) =>
-  s
-    .split(new RegExp(`(${CODE})`))
-    .map((part, i) => (i % 2 ? part : part.replaceAll('`', BACKTICK)))
-    .join('')
-
-// Slack parses markup only in `mrkdwn` text objects. `plain_text` and rich text strings are literal, so `&`, `<`, `>`
-// and backticks are escaped, and `render` unescapes them without reading them as references.
-const textOf = (t: RawBlock['text']) => {
+// Slack parses markup only in `mrkdwn` text objects. `plain_text` and rich text strings stay literal.
+const textOf = (t: RawBlock['text']): Nodes | undefined => {
   if (t === undefined) return undefined
-  if (typeof t === 'string') return escapeText(t)
-  return t.type === 'mrkdwn' ? mrkdwn(t.text) : escapeText(t.text)
+  if (typeof t === 'string') return literal(t)
+  return t.type === 'mrkdwn' ? parsed(t.text) : literal(t.text)
 }
 
-// Inline rich text elements, rewritten into the <…> markup `render` already resolves in `text`.
-const inline = new Map<string, (e: RawBlock) => string>([
-  ['text', (e) => textOf(e.text) ?? ''],
+const dateOf = (e: RawBlock) => {
+  if (e.fallback !== undefined) return literal(e.fallback)
+  const date = new Date((e.timestamp ?? Number.NaN) * 1000)
+  return literal(Number.isNaN(date.getTime()) ? '' : date.toISOString())
+}
+
+// Rich text elements become the same nodes `parse` produces, so `render` resolves both.
+const inline = new Map<string, (e: RawBlock) => Nodes>([
+  ['text', (e) => textOf(e.text) ?? []],
   [
     'link',
     (e) => {
-      const label = textOf(e.text) ?? ''
-      return e.url ? `<${e.url}${label && `|${label}`}>` : label
+      const label = typeof e.text === 'string' ? e.text : undefined
+      if (!e.url) return literal(label)
+      const node: MrkdwnNode = { type: 'link', url: e.url }
+      if (label) node.children = [text(label)]
+      return [node]
     },
   ],
-  ['user', (e) => `<@${e.user_id}>`],
-  ['channel', (e) => `<#${e.channel_id}>`],
-  ['usergroup', (e) => `<!subteam^${e.usergroup_id}>`],
-  ['broadcast', (e) => `<!${e.range}>`],
-  ['emoji', (e) => `:${e.name}:`],
+  ['user', (e) => (e.user_id ? [{ type: 'user', id: e.user_id }] : [])],
   [
-    'date',
-    (e) => {
-      if (e.fallback !== undefined) return escapeText(e.fallback)
-      const date = new Date((e.timestamp ?? Number.NaN) * 1000)
-      return Number.isNaN(date.getTime()) ? '' : date.toISOString()
-    },
+    'channel',
+    (e) => (e.channel_id ? [{ type: 'channel', id: e.channel_id }] : []),
   ],
-  ['raw_text', (e) => textOf(e.text) ?? ''],
+  [
+    'usergroup',
+    (e) => (e.usergroup_id ? [{ type: 'usergroup', id: e.usergroup_id }] : []),
+  ],
+  [
+    'broadcast',
+    (e) =>
+      e.range === 'here' || e.range === 'channel' || e.range === 'everyone'
+        ? [{ type: 'broadcast', range: e.range }]
+        : [],
+  ],
+  ['emoji', (e) => (e.name ? [{ type: 'emoji', name: e.name }] : [])],
+  ['date', dateOf],
+  ['raw_text', (e) => textOf(e.text) ?? []],
   [
     'raw_number',
-    (e) => textOf(e.text) ?? (e.value === undefined ? '' : String(e.value)),
+    (e) =>
+      textOf(e.text) ??
+      literal(e.value === undefined ? undefined : String(e.value)),
   ],
 ])
 const INLINE_CONTAINERS = new Set([
@@ -257,85 +263,110 @@ const INLINE_CONTAINERS = new Set([
   'rich_text_preformatted',
   'rich_text_quote',
 ])
-const richText = (e: RawBlock): string =>
-  inline.get(e.type)?.(e) ??
-  (e.elements ?? [])
-    .map(richText)
-    .join(INLINE_CONTAINERS.has(e.type) ? '' : '\n')
+const richText = (e: RawBlock): Nodes => {
+  const known = inline.get(e.type)
+  if (known) return known(e)
+  const children = (e.elements ?? []).map(richText)
+  return INLINE_CONTAINERS.has(e.type)
+    ? children.flat()
+    : children.flatMap((nodes, i) => (i ? [text('\n'), ...nodes] : nodes))
+}
 
-const image = (e: RawBlock) =>
-  e.alt_text ? `[image: ${escapeText(e.alt_text)}]` : undefined
+const image = (e: RawBlock): Nodes | undefined =>
+  e.alt_text ? [text(`[image: ${e.alt_text}]`)] : undefined
+
+const join = (parts: ReadonlyArray<Nodes | undefined>, sep: string): Nodes =>
+  parts
+    .filter((nodes): nodes is Nodes => nodes !== undefined && nodes.length > 0)
+    .flatMap((nodes, i) => (i ? [text(sep), ...nodes] : [...nodes]))
 
 // Block types that carry readable text. Others (actions, divider, input) hold controls or nothing to read.
-const blockText = new Map<string, (b: RawBlock) => string | undefined>([
+const blockText = new Map<string, (b: RawBlock) => Nodes | undefined>([
   ['header', (b) => textOf(b.text)],
   ['markdown', (b) => textOf(b.text)],
   [
     'section',
-    (b) =>
-      [textOf(b.text), ...(b.fields ?? []).map(textOf)]
-        .filter(Boolean)
-        .join('\n'),
+    (b) => join([textOf(b.text), ...(b.fields ?? []).map(textOf)], '\n'),
   ],
   [
     'context',
-    (b) =>
-      (b.elements ?? [])
-        .map((e) =>
+    (b) => {
+      const parts = (b.elements ?? []).flatMap((e) => {
+        const nodes =
           e.type === 'image'
             ? image(e)
             : typeof e.text === 'string'
               ? textOf({ type: e.type, text: e.text })
-              : undefined,
-        )
-        .filter(Boolean)
-        .join(' '),
+              : undefined
+        return nodes && nodes.length > 0 ? [nodes] : []
+      })
+      return parts.flatMap((nodes, i) =>
+        i ? [text(' '), ...nodes] : [...nodes],
+      )
+    },
   ],
   ['image', image],
-  ['video', (b) => b.title && `[video: ${textOf(b.title)}]`],
+  [
+    'video',
+    (b) =>
+      b.title
+        ? [text('[video: '), ...(textOf(b.title) ?? []), text(']')]
+        : undefined,
+  ],
   ['rich_text', richText],
   [
     'table',
     (b) =>
-      (b.rows ?? []).map((row) => row.map(richText).join(' | ')).join('\n'),
+      join(
+        (b.rows ?? []).map((row) => join(row.map(richText), ' | ')),
+        '\n',
+      ),
   ],
 ])
 
 const blocksText = (blocks: ReadonlyArray<RawBlock> | null | undefined) =>
   (blocks ?? []).map((b) => blockText.get(b.type)?.(b))
 
-// A message's text in Slack markup. Integrations and uploads often leave `text` empty and put the content in blocks,
+const blank = (nodes: Nodes) =>
+  nodes.every((n) => n.type === 'text' && n.value.trim() === '')
+
+// A message's readable parts. Integrations and uploads often leave `text` empty and put the content in blocks,
 // attachments or files, so those stand in only when `text` is empty.
 const markupOf = (
   m: Pick<RawMessage, 'text' | 'blocks' | 'attachments' | 'files'>,
-) =>
-  m.text ||
-  [
+): Nodes[] => {
+  if (m.text) return [parsed(m.text)]
+  return [
     ...blocksText(m.blocks),
-    ...(m.attachments ?? []).map(
-      (a) =>
-        [
-          a.author_name,
-          a.pretext,
-          a.title,
-          a.text,
-          ...(a.fields ?? []).map((f) =>
-            [f.title, f.value].filter(Boolean).join(': '),
-          ),
-          a.footer,
-        ]
-          .flatMap((s) => (s ? [mrkdwn(s)] : []))
-          .concat(blocksText(a.blocks).filter((s) => s !== undefined))
-          .join('\n') || (a.fallback ? mrkdwn(a.fallback) : undefined),
-    ),
+    ...(m.attachments ?? []).map((a) => {
+      const content = [
+        ...[a.author_name, a.pretext, a.title, a.text].flatMap((s) =>
+          s ? [parsed(s)] : [],
+        ),
+        ...(a.fields ?? []).flatMap((f) => {
+          const parts = [f.title, f.value].filter((s): s is string =>
+            Boolean(s),
+          )
+          const nodes = parts.length ? parsed(parts.join(': ')) : []
+          return nodes.length ? [nodes] : []
+        }),
+        ...(a.footer ? [parsed(a.footer)] : []),
+        ...blocksText(a.blocks).filter(
+          (nodes): nodes is Nodes => nodes !== undefined,
+        ),
+      ]
+      const body = join(content, '\n')
+      return body.length ? body : a.fallback ? parsed(a.fallback) : []
+    }),
     ...(m.files ?? []).map(
-      (f) =>
-        `[${f.mimetype?.startsWith('image/') ? 'image' : 'file'}: ${escapeText(f.name ?? f.title ?? 'untitled')}]`,
+      (f): Nodes => [
+        text(
+          `[${f.mimetype?.startsWith('image/') ? 'image' : 'file'}: ${f.name ?? f.title ?? 'untitled'}]`,
+        ),
+      ],
     ),
-  ]
-    .map((s) => s?.trim())
-    .filter(Boolean)
-    .join('\n')
+  ].filter((nodes): nodes is Nodes => nodes !== undefined && !blank(nodes))
+}
 
 const make = Effect.gen(function* () {
   const api = yield* SlackApi
@@ -435,61 +466,97 @@ const make = Effect.gen(function* () {
     return usergroups
   })
 
-  // Rewrites Slack's <…> markup into readable text. A reference that can't be resolved keeps its ID.
-  const render = (text: string) =>
+  const walk = function* (nodes: Nodes): Generator<MrkdwnNode> {
+    for (const node of nodes) {
+      yield node
+      if ('children' in node && node.children) yield* walk(node.children)
+    }
+  }
+
+  const render = (parts: ReadonlyArray<Nodes>) =>
     Effect.gen(function* () {
-      const token = new RegExp(`${CODE}|<[^<>]+>`, 'g')
-      const tokens = [
+      const nodes = [...parts.flatMap((part) => [...walk(part)])]
+      const ids = (type: 'user' | 'channel' | 'usergroup') => [
         ...new Set(
-          [...text.matchAll(token)]
-            .map((m) => m[0])
-            .filter((m) => m.startsWith('<')),
+          nodes.flatMap((n) =>
+            n.type === type && !('label' in n && n.label) ? [n.id] : [],
+          ),
         ),
       ]
-      const replacements = yield* Effect.forEach(
-        tokens,
-        (ref) =>
-          Effect.gen(function* () {
-            const [target = '', ...rest] = ref.slice(1, -1).split('|')
-            const label = rest.length ? rest.join('|') : undefined
-            if (target.startsWith('@')) {
-              return `@${label ?? (yield* userName(target.slice(1)))}`
-            }
-            if (target.startsWith('#')) {
-              if (label) return `#${label}`
-              const id = target.slice(1)
-              return `#${yield* channel(id).pipe(
-                Effect.map((c) => c.name),
-                Effect.orElseSucceed(() => id),
-              )}`
-            }
-            if (target.startsWith('!subteam^')) {
-              if (label) return label.startsWith('@') ? label : `@${label}`
-              const id = target.slice('!subteam^'.length)
-              const group = yield* allUsergroups.pipe(
-                Effect.map((gs) => gs.find((g) => g.id === id)),
-                Effect.orElseSucceed(() => undefined),
-              )
-              return `@${group?.handle ?? id}`
-            }
-            if (target.startsWith('!date^')) return label ?? target
-            if (target.startsWith('!')) return `@${target.slice(1)}`
-            if (target.startsWith('mailto:')) {
-              return label ?? target.slice('mailto:'.length)
-            }
-            return label ? `[${label}](${target})` : target
-          }),
-        { concurrency: 4 },
+      const names = new Map(
+        yield* Effect.forEach(
+          ids('user'),
+          (id) => userName(id).pipe(Effect.map((name) => [id, name] as const)),
+          { concurrency: 4 },
+        ),
       )
-      const resolved = new Map(tokens.map((t, i) => [t, replacements[i] ?? t]))
-      const out = text.replace(token, (m) =>
-        m.startsWith('<') ? (resolved.get(m) ?? m) : m,
+      const channelNames = new Map(
+        yield* Effect.forEach(
+          ids('channel'),
+          (id) =>
+            channel(id).pipe(
+              Effect.map((c) => [id, c.name] as const),
+              Effect.orElseSucceed(() => [id, id] as const),
+            ),
+          { concurrency: 4 },
+        ),
       )
-      return out
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll(BACKTICK, '`')
-        .replaceAll('&amp;', '&')
+      const groups = ids('usergroup').length
+        ? yield* allUsergroups.pipe(Effect.orElseSucceed(() => []))
+        : []
+      const handle = (id: string) =>
+        groups.find((g) => g.id === id)?.handle ?? id
+      const show = (node: MrkdwnNode): string => {
+        switch (node.type) {
+          case 'text':
+            return node.value
+          case 'code':
+            return `\`${node.value}\``
+          case 'preformatted':
+            return `\`\`\`\n${node.value}\n\`\`\``
+          case 'bold':
+            return `*${node.children.map(show).join('')}*`
+          case 'italic':
+            return `_${node.children.map(show).join('')}_`
+          case 'strike':
+            return `~${node.children.map(show).join('')}~`
+          case 'quote':
+            return node.children
+              .map(show)
+              .join('')
+              .split('\n')
+              .map((line) => `> ${line}`)
+              .join('\n')
+          case 'user':
+            return `@${node.label ?? names.get(node.id) ?? node.id}`
+          case 'channel':
+            return `#${node.label ?? channelNames.get(node.id) ?? node.id}`
+          case 'usergroup':
+            return node.label
+              ? node.label.startsWith('@')
+                ? node.label
+                : `@${node.label}`
+              : `@${handle(node.id)}`
+          case 'broadcast':
+            return `@${node.range}`
+          case 'date':
+            return node.fallback
+          case 'emoji':
+            return `:${node.name}:${node.skinTone ? `:skin-tone-${node.skinTone}:` : ''}`
+          case 'link': {
+            const label = node.children?.map(show).join('')
+            if (node.url.startsWith('mailto:')) {
+              return label || node.url.slice('mailto:'.length)
+            }
+            return label ? `[${label}](${node.url})` : node.url
+          }
+        }
+      }
+      return parts
+        .map((part) => part.map(show).join(''))
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join('\n')
     })
 
   const permalinkFor = (
