@@ -1,34 +1,51 @@
 const derived =
-  /^(?:(?:de|en)code(?:Unknown)?(?:Effect|Exit|Option|Promise|Result|Sync)|is(?:[A-Z]\w*)?|asserts|makeFilter(?:Group)?|makeIs\w*|resolveAnnotations(?:Key)?|to(?:JsonSchemaDocument|Equivalence|Formatter|Iso(?:Focus|Source)?|Representation|DifferJsonPatch|EncoderXml))$/
+  /^Schema\.(?:(?:de|en)code(?:Unknown)?(?:Effect|Exit|Option|Promise|Result|Sync)|is(?:[A-Z]\w*)?|asserts|makeFilter(?:Group)?|makeIs\w*|resolveAnnotations(?:Key)?|to(?:JsonSchemaDocument|Equivalence|Formatter|Iso(?:Focus|Source)?|Representation|DifferJsonPatch|EncoderXml))$/
+
+const errorBases = new Set([
+  'Error',
+  'Schema.TaggedError',
+  'Schema.Error',
+  'Data.TaggedError',
+  'Data.Error',
+])
 
 const wrappers = new Set([
   'TSAsExpression',
   'TSSatisfiesExpression',
   'TSNonNullExpression',
+  'TSInstantiationExpression',
 ])
 
-// The member access applied directly to the chain's root identifier, e.g. `Schema.Struct` in `Schema.Struct({}).pipe(f)`.
-const rootMember = (node) => {
+const functions = new Set([
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ArrowFunctionExpression',
+])
+
+// `Schema.Struct` for `Schema.Struct({}).pipe(f)`, `Error` for `Error`.
+const rootPath = (node) => {
   let member
   while (node) {
-    if (wrappers.has(node.type)) node = node.expression
-    else if (node.type === 'CallExpression') node = node.callee
+    if (node.type === 'CallExpression') node = node.callee
     else if (node.type === 'MemberExpression') {
       member = node
       node = node.object
-    } else break
+    } else if (wrappers.has(node.type)) node = node.expression
+    else break
   }
-  return node?.type === 'Identifier' && member?.object === node
-    ? { root: node.name, name: member.computed ? null : member.property.name }
+  if (node?.type !== 'Identifier') return undefined
+  if (!member) return node.name
+  return member.object === node && !member.computed
+    ? `${node.name}.${member.property.name}`
     : undefined
 }
 
 const isSchema = (node) => {
-  const m = rootMember(node)
-  return m?.root === 'Schema' && m.name !== null && !derived.test(m.name)
+  const path = rootPath(node)
+  return path?.startsWith('Schema.') && !derived.test(path)
 }
 
-const functionName = (fn) =>
+const nameOf = (fn) =>
   fn.type === 'FunctionDeclaration'
     ? fn.id
     : fn.parent.type === 'VariableDeclarator'
@@ -53,14 +70,14 @@ const schemaLocation = {
         if (isSchema(node.init)) report(node.id)
       },
       ArrowFunctionExpression(node) {
-        if (node.expression && isSchema(node.body)) report(functionName(node))
+        if (node.expression && isSchema(node.body)) report(nameOf(node))
       },
       ReturnStatement(node) {
         if (!isSchema(node.argument)) return
         const fn = context.sourceCode
           .getAncestors(node)
-          .findLast((a) => a.type.includes('Function'))
-        if (fn) report(functionName(fn))
+          .findLast((a) => functions.has(a.type))
+        if (fn) report(nameOf(fn))
       },
     }
   },
@@ -71,13 +88,7 @@ const errorLocation = {
     if (/(?:-errors|\.test)\.ts$/.test(context.filename)) return {}
     return {
       ClassDeclaration(node) {
-        const base = node.superClass
-        const m = rootMember(base)
-        const isError =
-          (base?.type === 'Identifier' && base.name === 'Error') ||
-          ((m?.root === 'Schema' || m?.root === 'Data') &&
-            (m.name === 'TaggedError' || m.name === 'Error'))
-        if (isError && node.id)
+        if (node.id && errorBases.has(rootPath(node.superClass)))
           context.report({
             node: node.id,
             message:
