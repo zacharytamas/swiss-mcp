@@ -112,8 +112,8 @@ Small calculations over your YNAB budget, done in code so an agent gets the same
 
 ```sh
 bun run start   # run the server on stdio
-bun run check   # Biome lint/format check + typecheck
-bun run fix     # apply Biome fixes
+bun run check   # oxfmt format check + oxlint + typecheck
+bun run fix     # apply oxlint fixes and oxfmt formatting
 bun test
 bun scripts/mcp-call.ts                          # list tools as an MCP client sees them
 bun scripts/mcp-call.ts due_list_reminders '{}'  # call one tool
