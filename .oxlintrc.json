@@ -4,5 +4,8 @@
   "rules": {
     "location/schema-location": "error",
     "location/error-location": "error"
+  },
+  "options": {
+    "typeAware": true
   }
 }
