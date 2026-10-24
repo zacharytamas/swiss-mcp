@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "start": "bun src/main.ts",
-    "check": "oxfmt --check && oxlint && bun check",
+    "check": "oxfmt --check && oxlint --deny-warnings && bun check",
     "fix": "oxlint --fix && oxfmt",
     "test": "bun test"
   },
@@ -23,7 +23,6 @@
     "@types/bun": "^1.4.2",
     "oxfmt": "^0.73.0",
     "oxlint": "^1.88.0",
-    "oxlint-tsgolint": "^7.0.2004",
     "shortcutkit": "^0.8.1",
     "typescript": "^7.0.2"
   }
