@@ -1,6 +1,6 @@
 # swiss-mcp
 
-An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Effect](https://effect.website), run on [Bun](https://bun.sh). It speaks MCP over stdio. Its tools fall into two groups. **Due** drives the Due app on macOS through Apple Shortcuts. **Slack** reads Slack and manages your reactions through the Slack Web API with your user token.
+An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Effect](https://effect.website), run on [Bun](https://bun.sh). It speaks MCP over stdio. Its tools fall into three groups. **Due** drives the Due app on macOS through Apple Shortcuts. **Slack** reads Slack and manages your reactions through the Slack Web API with your user token. **YNAB** computes budget numbers from the YNAB API.
 
 ```sh
 bun install
@@ -88,6 +88,25 @@ bun --env-file=.env scripts/verify-slack.ts   # read-only: calls every Slack rea
 - Slack's composer drafts (`drafts.*`) are an internal API that rejects user tokens with `not_allowed_token_type`, so `slack_draft_to_self` puts the draft in your self-DM, headed with where it should go.
 - `@here` and `@channel` don't count as mentions.
 - Search results follow the search filters in your Slack preferences.
+
+## YNAB
+
+Small calculations over your YNAB budget, done in code so an agent gets the same answer every time. For everything else, use YNAB's own MCP server.
+
+| Tool | What it does |
+|---|---|
+| `ynab_daily_pace` | Ready to Assign divided by the days until the next pace day: `dailyPace`, `days`, `targetDate`, `readyToAssign`, `budgetId` |
+
+### Setup
+
+- `YNAB_ACCESS_TOKEN` (required). A personal access token from YNAB under Account Settings, then Developer Settings.
+- `YNAB_BUDGET_ID` (required). The UUID in the YNAB web app URL.
+- `YNAB_PACE_DAY` (optional, default `15`). The day of the month to pace to. The target is always after today, so on the 15th it is next month's 15th. A day past a month's end (such as 31) means that month's last day.
+
+### Known limits
+
+- Today is the server's local date.
+- Amounts are in whole currency, such as dollars, not YNAB's milliunits: `12.34` means $12.34. `dailyPace` is rounded down to 0.01, which assumes a currency with two decimal places.
 
 ## Development
 
