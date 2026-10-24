@@ -8,8 +8,8 @@
   },
   "scripts": {
     "start": "bun src/main.ts",
-    "check": "biome check . && bun check",
-    "fix": "biome check --write .",
+    "check": "oxfmt --check && biome lint . && bun check",
+    "fix": "biome lint --write . && oxfmt",
     "test": "bun test"
   },
   "dependencies": {

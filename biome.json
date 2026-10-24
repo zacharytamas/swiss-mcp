@@ -9,9 +9,7 @@
     "ignoreUnknown": false
   },
   "formatter": {
-    "enabled": true,
-    "indentStyle": "space",
-    "indentWidth": 2
+    "enabled": false
   },
   "linter": {
     "enabled": true,
@@ -19,19 +17,8 @@
       "preset": "recommended"
     }
   },
-  "javascript": {
-    "formatter": {
-      "quoteStyle": "single",
-      "semicolons": "asNeeded"
-    }
-  },
   "plugins": ["./lint/schema-location.grit", "./lint/error-location.grit"],
   "assist": {
-    "enabled": true,
-    "actions": {
-      "source": {
-        "organizeImports": "on"
-      }
-    }
+    "enabled": false
   }
 }

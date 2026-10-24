@@ -10,13 +10,13 @@ Then set up whichever groups you want to use.
 
 ## Due
 
-| Tool | What it does |
-|---|---|
-| `due_list_reminders` | List Due reminders with their due dates |
-| `due_create_reminder` | Create a one-time reminder (`title`, `dueDate` as local `YYYY-MM-DD HH:mm`) |
-| `due_complete_reminder` | Mark reminders with this exact `title` done |
-| `due_reschedule_reminder` | Move reminders with this exact `title` to a new `dueDate` |
-| `due_start_timer` / `due_pause_timer` / `due_stop_timer` | Act on the timer with this exact `name` |
+| Tool                                                     | What it does                                                                |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `due_list_reminders`                                     | List Due reminders with their due dates                                     |
+| `due_create_reminder`                                    | Create a one-time reminder (`title`, `dueDate` as local `YYYY-MM-DD HH:mm`) |
+| `due_complete_reminder`                                  | Mark reminders with this exact `title` done                                 |
+| `due_reschedule_reminder`                                | Move reminders with this exact `title` to a new `dueDate`                   |
+| `due_start_timer` / `due_pause_timer` / `due_stop_timer` | Act on the timer with this exact `name`                                     |
 
 ### How it works
 
@@ -51,18 +51,18 @@ Measured on Due 26.4.4:
 
 ## Slack
 
-| Tool | What it does |
-|---|---|
-| `slack_search_messages` | Search messages with Slack search syntax; IDs in results are resolved to names |
-| `slack_read_thread` | A thread's parent and replies, by permalink or `channel` + `ts` |
-| `slack_read_channel` | Top-level channel or DM messages, e.g. what led up to a permalink |
-| `slack_resolve` | Name and basic info for user, conversation and user-group IDs |
-| `slack_my_activity` | What you said since a day, grouped by thread or channel with what you replied to |
-| `slack_unanswered_mentions` | Mentions of you, your user groups or your name with no later reply or reaction from you |
-| `slack_draft_to_self` | Posts a draft to your own DM, naming where it should go |
-| `slack_get_reactions` | Reactions on one message, with who left each |
-| `slack_list_my_reactions` | Messages you reacted to, most recent first |
-| `slack_add_reaction` / `slack_remove_reaction` | Add or remove your emoji reaction on a message; a repeat is a no-op |
+| Tool                                           | What it does                                                                            |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `slack_search_messages`                        | Search messages with Slack search syntax; IDs in results are resolved to names          |
+| `slack_read_thread`                            | A thread's parent and replies, by permalink or `channel` + `ts`                         |
+| `slack_read_channel`                           | Top-level channel or DM messages, e.g. what led up to a permalink                       |
+| `slack_resolve`                                | Name and basic info for user, conversation and user-group IDs                           |
+| `slack_my_activity`                            | What you said since a day, grouped by thread or channel with what you replied to        |
+| `slack_unanswered_mentions`                    | Mentions of you, your user groups or your name with no later reply or reaction from you |
+| `slack_draft_to_self`                          | Posts a draft to your own DM, naming where it should go                                 |
+| `slack_get_reactions`                          | Reactions on one message, with who left each                                            |
+| `slack_list_my_reactions`                      | Messages you reacted to, most recent first                                              |
+| `slack_add_reaction` / `slack_remove_reaction` | Add or remove your emoji reaction on a message; a repeat is a no-op                     |
 
 ### Setup
 
@@ -93,8 +93,8 @@ bun --env-file=.env scripts/verify-slack.ts   # read-only: calls every Slack rea
 
 Small calculations over your YNAB budget, done in code so an agent gets the same answer every time. For everything else, use YNAB's own MCP server.
 
-| Tool | What it does |
-|---|---|
+| Tool              | What it does                                                                                                                |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `ynab_daily_pace` | Ready to Assign divided by the days until the next pace day: `dailyPace`, `days`, `targetDate`, `readyToAssign`, `budgetId` |
 
 ### Setup

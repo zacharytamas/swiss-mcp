@@ -44,13 +44,13 @@ Due also needs the `swiss-due` shortcut imported once per Mac. That is a manual,
 
 `$K/doctor.sh` is read-only. It prints `INFO build <sha>` with ` +uncommitted` when `git status --porcelain` is non-empty. Then it prints one PASS or FAIL per check. Read the lines, not the exit status:
 
-| FAIL line | Blocks |
-|---|---|
-| `jq 1.6+ missing` | every feature |
-| `deps missing` | every feature |
-| `server tools/list: expected 19 tools` | every feature |
-| `swiss-due shortcut missing` | Due features only |
-| `SLACK_USER_TOKEN missing` | Slack features only |
+| FAIL line                              | Blocks              |
+| -------------------------------------- | ------------------- |
+| `jq 1.6+ missing`                      | every feature       |
+| `deps missing`                         | every feature       |
+| `server tools/list: expected 19 tools` | every feature       |
+| `swiss-due shortcut missing`           | Due features only   |
+| `SLACK_USER_TOKEN missing`             | Slack features only |
 
 The token check proves the variable is set, not that it authenticates. A bad token shows up on the first Slack call as `isError` with `SlackApiError:invalid_auth`.
 
@@ -62,12 +62,12 @@ R=$($C <feature-id> <tool> '<json-args>')
 
 `call.sh` runs `bun --env-file=.env scripts/mcp-call.ts <tool> <json-args>`. That script spawns the server, initializes, sends one `tools/call` and kills the server. On stdout `call.sh` prints only the saved response file's path, so `R` holds it. On stderr it prints one summary line:
 
-| Summary | Meaning | Exit |
-|---|---|---|
-| `ok {…}` | `result.structuredContent`, cut to 600 characters | 0 |
-| `isError {"error":…,"message":…}` | Tool failure. There is no `structuredContent`; the JSON is in `result.content[0].text`. `error` is a tag such as `SlackInputInvalid`, `SlackApiError:channel_not_found` or `ShortcutTimedOut`. | 0 |
-| `rpc-error {"code":-32602,…}` | The arguments failed the tool's Schema. The server rejected them before any Due or Slack call. | 0 |
-| `transport-failure …` | No usable reply. `mcp-call.ts` exits 1 when the server writes a non-JSON line or closes stdout, 2 when the arguments are not JSON (no server starts), and 124 after 300 s with no reply. Read the `.stderr.txt`. The step fails. | 1 |
+| Summary                           | Meaning                                                                                                                                                                                                                          | Exit |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `ok {…}`                          | `result.structuredContent`, cut to 600 characters                                                                                                                                                                                | 0    |
+| `isError {"error":…,"message":…}` | Tool failure. There is no `structuredContent`; the JSON is in `result.content[0].text`. `error` is a tag such as `SlackInputInvalid`, `SlackApiError:channel_not_found` or `ShortcutTimedOut`.                                   | 0    |
+| `rpc-error {"code":-32602,…}`     | The arguments failed the tool's Schema. The server rejected them before any Due or Slack call.                                                                                                                                   | 0    |
+| `transport-failure …`             | No usable reply. `mcp-call.ts` exits 1 when the server writes a non-JSON line or closes stdout, 2 when the arguments are not JSON (no server starts), and 124 after 300 s with no reply. Read the `.stderr.txt`. The step fails. | 1    |
 
 Build JSON arguments with `jq -cn --arg`, never by pasting variables into a JSON string. Names can contain quotes.
 
@@ -79,12 +79,12 @@ $X <label> "$R" '<jq filter>' [--arg name value ...]
 
 `check.sh` prints `PASS <label>` or `FAIL <label>` and appends that line to `checks.txt` in the feature's evidence directory. The filter can use these definitions:
 
-| Definition | True when |
-|---|---|
-| `ok` | The call succeeded with `structuredContent` |
-| `sc` | Shorthand for `.result.structuredContent` |
-| `err("Tag")` | The call is `isError` with that `error` tag |
-| `errmsg` | The `message` of an `isError` |
+| Definition    | True when                                   |
+| ------------- | ------------------------------------------- |
+| `ok`          | The call succeeded with `structuredContent` |
+| `sc`          | Shorthand for `.result.structuredContent`   |
+| `err("Tag")`  | The call is `isError` with that `error` tag |
+| `errmsg`      | The `message` of an `isError`               |
 | `rpc(-32602)` | The call is a JSON-RPC error with that code |
 
 Read a value for a later step from the response file. Use `jq -er` so a missing value fails loudly:
@@ -119,13 +119,13 @@ Proof standards:
 
 ## Concurrency
 
-| Feature | Two runs at once |
-|---|---|
-| Due reminders | Safe. Titles carry `$VERIFY_RUN`. |
-| Due timers | Never. They act on one shared, user-named timer. |
-| Slack reading, Slack catch-up | Safe. Read-only. |
-| Slack reactions | Never, in the same workspace. Both runs would race on the same reaction. |
-| Slack drafts | Safe. Each run posts its own messages. |
+| Feature                       | Two runs at once                                                         |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| Due reminders                 | Safe. Titles carry `$VERIFY_RUN`.                                        |
+| Due timers                    | Never. They act on one shared, user-named timer.                         |
+| Slack reading, Slack catch-up | Safe. Read-only.                                                         |
+| Slack reactions               | Never, in the same workspace. Both runs would race on the same reaction. |
+| Slack drafts                  | Safe. Each run posts its own messages.                                   |
 
 ## Cleanup
 

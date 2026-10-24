@@ -428,13 +428,11 @@ const markupOf = (
       const body = join(content, '\n')
       return body.length ? body : a.fallback ? parsed(a.fallback) : []
     }),
-    ...(m.files ?? []).map(
-      (f): Nodes => [
-        text(
-          `[${f.mimetype?.startsWith('image/') ? 'image' : 'file'}: ${f.name ?? f.title ?? 'untitled'}]`,
-        ),
-      ],
-    ),
+    ...(m.files ?? []).map((f): Nodes => [
+      text(
+        `[${f.mimetype?.startsWith('image/') ? 'image' : 'file'}: ${f.name ?? f.title ?? 'untitled'}]`,
+      ),
+    ]),
   ]
     .filter((nodes): nodes is Nodes => nodes !== undefined && !blank(nodes))
     .map(trimmed)
