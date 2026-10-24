@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { requestOnce } from '../scripts/mcp-client.ts'
 import { paceTarget } from './ynab.ts'
 
 const BUDGET = '11111111-2222-3333-4444-555555555555'
@@ -74,52 +75,18 @@ const callPace = async (env: Record<string, string>) => {
   const base = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !key.startsWith('YNAB_')),
   )
-  const proc = Bun.spawn(['bun', '--no-env-file', 'src/main.ts'], {
-    stdin: 'pipe',
-    stdout: 'pipe',
-    stderr: 'inherit',
-    env: {
-      ...base,
-      SWISS_YNAB_API_URL: server.url.href.replace(/\/$/, ''),
-      ...env,
-    },
-  })
-  for (const message of [
+  const reply = await requestOnce(
+    'tools/call',
+    { name: 'ynab_daily_pace', arguments: {} },
     {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2025-06-18',
-        capabilities: {},
-        clientInfo: { name: 'test', version: '0' },
+      env: {
+        ...base,
+        SWISS_YNAB_API_URL: server.url.href.replace(/\/$/, ''),
+        ...env,
       },
     },
-    { jsonrpc: '2.0', method: 'notifications/initialized' },
-    {
-      jsonrpc: '2.0',
-      id: 2,
-      method: 'tools/call',
-      params: { name: 'ynab_daily_pace', arguments: {} },
-    },
-  ]) {
-    proc.stdin.write(`${JSON.stringify(message)}\n`)
-  }
-  let buffered = ''
-  for await (const chunk of proc.stdout.pipeThrough(new TextDecoderStream())) {
-    buffered += chunk
-    const lines = buffered.split('\n')
-    buffered = lines.pop() ?? ''
-    const found = lines
-      .filter((line) => line.startsWith('{'))
-      .map((line) => JSON.parse(line))
-      .find((message) => message.id === 2)
-    if (found) {
-      proc.kill()
-      return found.result
-    }
-  }
-  throw new Error('server exited without answering ynab_daily_pace')
+  )
+  return reply.result
 }
 
 const configured = { YNAB_ACCESS_TOKEN: 'ynab-test', YNAB_BUDGET_ID: BUDGET }
