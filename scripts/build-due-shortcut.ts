@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import {
-  type Action,
   type Attachment,
+  ref,
   Shortcut,
   shortcutInput,
   subject,
@@ -49,14 +49,6 @@ const asText = (a: Ref) =>
     Type: 'WFCoercionVariableAggrandizement',
     CoercionItemClass: 'WFStringContentItem',
   })
-const output = (action: Action, name: string): Ref => ({
-  WFSerializationType: 'WFTextTokenAttachment',
-  Value: {
-    Type: 'ActionOutput',
-    OutputUUID: String(action.WFWorkflowActionParameters.UUID),
-    OutputName: name,
-  },
-})
 const repeatItem: Ref = {
   WFSerializationType: 'WFTextTokenAttachment',
   Value: { Type: 'Variable', VariableName: 'Repeat Item' },
@@ -66,7 +58,7 @@ const request = s.action('is.workflow.actions.detect.dictionary', {
   WFInput: shortcutInput(),
 })
 const field = (key: string) =>
-  aggrandize(output(request, 'Dictionary'), {
+  aggrandize(ref(request, 'Dictionary'), {
     Type: 'WFDictionaryValueVariableAggrandizement',
     DictionaryKey: key,
   })
@@ -81,7 +73,7 @@ const due = (intent: string, params: Record<string, unknown>) =>
 // Due's reminder Find only honours "Title contains" (measured on Due 26.4.4): no condition, "does not contain",
 // "has any value" and date conditions all return nothing. So "every reminder" is "title contains any letter, digit
 // or space"; a title made only of other characters (emoji, CJK) is not listed.
-const ANY_TITLE = [...'abcdefghijklmnopqrstuvwxyz0123456789 ']
+const ANY_TITLE = 'abcdefghijklmnopqrstuvwxyz0123456789 '.split('')
 const findReminders = (matching?: TokenString) =>
   due('ReminderEntity', {
     WFContentItemFilter: {
@@ -152,14 +144,14 @@ const reminder = (item: Ref) => {
   })
   return record({
     title: text(property(item, 'title')),
-    dueDate: text(output(due, 'Formatted Date')),
+    dueDate: text(ref(due, 'Formatted Date')),
   })
 }
 
 const forEach = (items: Ref, body: () => void) => {
   const gid = s.repeatEach(items)
   body()
-  return output(s.endRepeatEach(gid), 'Repeat Results')
+  return ref(s.endRepeatEach(gid), 'Repeat Results')
 }
 
 // Each op answers with a JSON array: a dictionary coerces to its JSON text, and the items are comma-joined.
@@ -170,7 +162,7 @@ const respond = (items: Ref) => {
     WFTextCustomSeparator: ',',
   })
   s.action('is.workflow.actions.output', {
-    WFOutput: text('[', output(joined, 'Combined Text'), ']'),
+    WFOutput: text('[', ref(joined, 'Combined Text'), ']'),
   })
 }
 
@@ -182,7 +174,7 @@ const op = (name: string, body: () => void) => {
 
 op('reminders.list', () =>
   respond(
-    forEach(output(findReminders(), 'Reminders'), () => reminder(repeatItem)),
+    forEach(ref(findReminders(), 'Reminders'), () => reminder(repeatItem)),
   ),
 )
 
@@ -195,7 +187,7 @@ op('reminders.create', () => {
     criticalAlert: 'off',
     syncWhenRun: false,
   })
-  respond(output(reminder(output(created, 'Reminder')), 'Dictionary'))
+  respond(ref(reminder(ref(created, 'Reminder')), 'Dictionary'))
 })
 
 for (const [name, act] of [
@@ -217,7 +209,7 @@ for (const [name, act] of [
 ] as const) {
   op(name, () =>
     respond(
-      forEach(output(findReminders(text(field('title'))), 'Reminders'), () =>
+      forEach(ref(findReminders(text(field('title'))), 'Reminders'), () =>
         when(
           property(repeatItem, 'title'),
           text(field('title')),
@@ -245,10 +237,7 @@ for (const [name, intent] of [
       syncWhenRun: false,
     })
     respond(
-      output(
-        record({ name: text(asText(output(timer, 'Timer'))) }),
-        'Dictionary',
-      ),
+      ref(record({ name: text(asText(ref(timer, 'Timer'))) }), 'Dictionary'),
     )
   })
 }
