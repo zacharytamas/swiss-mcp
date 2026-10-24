@@ -1,43 +1,10 @@
 // Usage: bun --env-file=.env scripts/verify-slack.ts
 // Read-only: drives every Slack read tool through src/main.ts against the real workspace and prints the shape of what
 // came back, never message text. Exits non-zero if any tool errors or returns unresolved Slack markup.
-const server = Bun.spawn(['bun', 'src/main.ts'], {
-  stdin: 'pipe',
-  stdout: 'pipe',
-  stderr: 'inherit',
-})
-const responses = new Map<number, (value: unknown) => void>()
-void (async () => {
-  let buffer = ''
-  for await (const chunk of server.stdout.pipeThrough(
-    new TextDecoderStream(),
-  )) {
-    buffer += chunk
-    for (let nl = buffer.indexOf('\n'); nl >= 0; nl = buffer.indexOf('\n')) {
-      const message = JSON.parse(buffer.slice(0, nl))
-      buffer = buffer.slice(nl + 1)
-      responses.get(message.id)?.(message)
-    }
-  }
-})()
-let nextId = 1
-const request = (method: string, params: object) => {
-  const id = nextId++
-  const { promise, resolve } = Promise.withResolvers<unknown>()
-  responses.set(id, resolve)
-  server.stdin.write(
-    `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`,
-  )
-  return promise
-}
-await request('initialize', {
-  protocolVersion: '2025-06-18',
-  capabilities: {},
-  clientInfo: { name: 'verify-slack', version: '0' },
-})
-server.stdin.write(
-  `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`,
-)
+import { startServer } from './mcp-client.ts'
+
+const server = startServer()
+await server.initialize()
 
 type Msg = {
   text: string
@@ -51,7 +18,7 @@ type Reply = {
 
 let failures = 0
 const call = async (name: string, args: object) => {
-  const reply = (await request('tools/call', {
+  const reply = (await server.request('tools/call', {
     name,
     arguments: args,
   })) as Reply
