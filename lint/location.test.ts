@@ -22,6 +22,9 @@ export const StringToNumber = Schema.encodeTo(Schema.String)(Schema.Number)
 export const Rebuilt = Schema.make<typeof A>(A.ast)
 export const Trimmed = Schema.decode({ decode: (s) => s, encode: (s) => s })
 export const Json = Schema.toCodecJson(A)
+export const literal2 = ((s: string) => Schema.Literal(s)) satisfies Function
+export const Expr = class Expr extends Data.TaggedError('Expr')<{}> {}
+export default class extends Error {}
 `
 
 const flagged = (file: string) => {
@@ -64,6 +67,9 @@ test('flags named Schemas and error classes, not values derived from Schemas', (
     '18 schema',
     '19 schema',
     '2 schema',
+    '20 schema',
+    '21 error',
+    '22 error',
     '3 schema',
     '4 schema',
     '5 error',
@@ -73,7 +79,13 @@ test('flags named Schemas and error classes, not values derived from Schemas', (
 })
 
 test('allows named Schemas only in *-schema.ts', () => {
-  expect(flagged('module-schema.ts')).toEqual(['5 error', '6 error', '7 error'])
+  expect(flagged('module-schema.ts')).toEqual([
+    '21 error',
+    '22 error',
+    '5 error',
+    '6 error',
+    '7 error',
+  ])
 })
 
 test('allows error classes only in *-errors.ts', () => {
@@ -84,6 +96,7 @@ test('allows error classes only in *-errors.ts', () => {
     '18 schema',
     '19 schema',
     '2 schema',
+    '20 schema',
     '3 schema',
     '4 schema',
   ])

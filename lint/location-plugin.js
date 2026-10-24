@@ -45,12 +45,12 @@ const isSchema = (node) => {
   return path?.startsWith('Schema.') && !derived.test(path)
 }
 
-const nameOf = (fn) =>
-  fn.type === 'FunctionDeclaration'
-    ? fn.id
-    : fn.parent.type === 'VariableDeclarator'
-      ? fn.parent.id
-      : undefined
+// The binding a function is assigned to, looking through `satisfies` and `as`.
+const nameOf = (fn) => {
+  let node = fn
+  while (wrappers.has(node.parent.type)) node = node.parent
+  return node.parent.type === 'VariableDeclarator' ? node.parent.id : fn.id
+}
 
 const schemaLocation = {
   create(context) {
@@ -87,10 +87,10 @@ const errorLocation = {
   create(context) {
     if (/(?:-errors|\.test)\.ts$/.test(context.filename)) return {}
     return {
-      ClassDeclaration(node) {
-        if (node.id && errorBases.has(rootPath(node.superClass)))
+      'ClassDeclaration, ClassExpression'(node) {
+        if (errorBases.has(rootPath(node.superClass)))
           context.report({
-            node: node.id,
+            node: node.id ?? node,
             message:
               'Define error classes in a sibling *-errors.ts file (e.g. shortcuts.ts -> shortcuts-errors.ts) and import them. See AGENTS.md.',
           })
