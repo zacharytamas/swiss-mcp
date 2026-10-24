@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "jsPlugins": ["./lint/location-plugin.js"],
+  "rules": {
+    "location/schema-location": "error",
+    "location/error-location": "error"
+  }
+}

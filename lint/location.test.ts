@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -22,41 +22,42 @@ export const StringToNumber = Schema.encodeTo(Schema.String)(Schema.Number)
 export const Rebuilt = Schema.make<typeof A>(A.ast)
 export const Trimmed = Schema.decode({ decode: (s) => s, encode: (s) => s })
 export const Json = Schema.toCodecJson(A)
+export const literal2 = ((s: string) => Schema.Literal(s)) satisfies Function
+export const Expr = class Expr extends Data.TaggedError('Expr')<{}> {}
+export default class extends Error {}
+export const makeArray = Schema.Array<typeof Schema.String>
 `
 
 const flagged = (file: string) => {
   const dir = mkdtempSync(join(tmpdir(), 'location-'))
-  writeFileSync(
-    join(dir, 'biome.json'),
-    JSON.stringify({
-      plugins: ['schema-location.grit', 'error-location.grit'].map((rule) =>
-        join(import.meta.dir, rule),
-      ),
-      linter: { rules: { recommended: false } },
-    }),
-  )
-  writeFileSync(join(dir, file), source)
-  const { stdout } = Bun.spawnSync(
-    [
-      join(import.meta.dir, '../node_modules/.bin/biome'),
-      'lint',
-      '--reporter=json',
-      file,
-    ],
-    { cwd: dir },
-  )
-  const report = JSON.parse(stdout.toString()) as {
-    diagnostics: Array<{
-      message: string
-      location: { start: { line: number } }
-    }>
-  }
-  return report.diagnostics
-    .map(
-      (d) =>
-        `${d.location.start.line} ${d.message.includes('*-schema.ts') ? 'schema' : 'error'}`,
+  try {
+    writeFileSync(join(dir, file), source)
+    const { stdout, exitCode } = Bun.spawnSync(
+      [
+        join(import.meta.dir, '../node_modules/.bin/oxlint'),
+        `--config=${join(import.meta.dir, '../.oxlintrc.json')}`,
+        '--format=json',
+        file,
+      ],
+      { cwd: dir },
     )
-    .sort()
+    const report = JSON.parse(stdout.toString()) as {
+      diagnostics: Array<{
+        code: string
+        labels: Array<{ span: { line: number } }>
+      }>
+    }
+    expect(exitCode).toBe(report.diagnostics.length > 0 ? 1 : 0)
+    return report.diagnostics
+      .filter((d) => d.code.startsWith('location('))
+      .map(
+        (d) =>
+          `${d.labels[0]?.span.line} ${d.code === 'location(schema-location)' ? 'schema' : 'error'}`,
+      )
+      .sort()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 test('flags named Schemas and error classes, not values derived from Schemas', () => {
@@ -67,6 +68,10 @@ test('flags named Schemas and error classes, not values derived from Schemas', (
     '18 schema',
     '19 schema',
     '2 schema',
+    '20 schema',
+    '21 error',
+    '22 error',
+    '23 schema',
     '3 schema',
     '4 schema',
     '5 error',
@@ -76,7 +81,13 @@ test('flags named Schemas and error classes, not values derived from Schemas', (
 })
 
 test('allows named Schemas only in *-schema.ts', () => {
-  expect(flagged('module-schema.ts')).toEqual(['5 error', '6 error', '7 error'])
+  expect(flagged('module-schema.ts')).toEqual([
+    '21 error',
+    '22 error',
+    '5 error',
+    '6 error',
+    '7 error',
+  ])
 })
 
 test('allows error classes only in *-errors.ts', () => {
@@ -87,6 +98,8 @@ test('allows error classes only in *-errors.ts', () => {
     '18 schema',
     '19 schema',
     '2 schema',
+    '20 schema',
+    '23 schema',
     '3 schema',
     '4 schema',
   ])

@@ -1,15 +1,15 @@
 {
   "name": "swiss-mcp",
   "version": "0.0.0",
-  "type": "module",
   "private": true,
   "bin": {
     "swiss-mcp": "src/main.ts"
   },
+  "type": "module",
   "scripts": {
     "start": "bun src/main.ts",
-    "check": "biome check . && bun check",
-    "fix": "biome check --write .",
+    "check": "oxfmt --check && oxlint --deny-warnings && bun check",
+    "fix": "oxlint --fix && oxfmt",
     "test": "bun test"
   },
   "dependencies": {
@@ -19,9 +19,10 @@
     "ynab": "^4.5.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.15",
     "@effect/language-service": "^0.87.3",
     "@types/bun": "^1.4.2",
+    "oxfmt": "^0.73.0",
+    "oxlint": "^1.88.0",
     "shortcutkit": "^0.8.1",
     "typescript": "^7.0.2"
   }
