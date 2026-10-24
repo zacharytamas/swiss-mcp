@@ -35,11 +35,11 @@ const flagged = (file: string) => {
     const { stdout, exitCode } = Bun.spawnSync(
       [
         join(import.meta.dir, '../node_modules/.bin/oxlint'),
-        `--config=${join(import.meta.dir, '../.oxlintrc.json')}`,
         '--format=json',
-        file,
+        join(dir, file),
       ],
-      { cwd: dir },
+      // From the repo root, as bun run check runs it, so oxlint finds .oxlintrc.json and oxlint-tsgolint.
+      { cwd: join(import.meta.dir, '..') },
     )
     const report = JSON.parse(stdout.toString()) as {
       diagnostics: Array<{

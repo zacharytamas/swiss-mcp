@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { requestOnce } from '../scripts/mcp-client.ts'
 import { parsePermalink } from './slack.ts'
 
 const ME = 'UME'
@@ -671,7 +672,7 @@ beforeAll(() => {
 })
 afterAll(() => server.stop(true))
 
-// Starts src/main.ts against the fake Slack, initializes, sends one tools/call as id 2, and returns its result.
+// Calls one tool on src/main.ts against the fake Slack and returns its result.
 const callTool = async (
   name: string,
   args: object,
@@ -684,49 +685,13 @@ const callTool = async (
   )
   env.SWISS_SLACK_API_URL = server.url.href.replace(/\/$/, '')
   if (token !== null) env.SLACK_USER_TOKEN = token
-  const proc = Bun.spawn(['bun', '--no-env-file', 'src/main.ts'], {
-    stdin: 'pipe',
-    stdout: 'pipe',
-    stderr: 'inherit',
-    env,
-  })
-  for (const message of [
-    {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2025-06-18',
-        capabilities: {},
-        clientInfo: { name: 'test', version: '0' },
-      },
-    },
-    { jsonrpc: '2.0', method: 'notifications/initialized' },
-    {
-      jsonrpc: '2.0',
-      id: 2,
-      method: 'tools/call',
-      params: { name, arguments: args },
-    },
-  ]) {
-    proc.stdin.write(`${JSON.stringify(message)}\n`)
-  }
-  let buffered = ''
-  for await (const chunk of proc.stdout.pipeThrough(new TextDecoderStream())) {
-    buffered += chunk
-    const lines = buffered.split('\n')
-    buffered = lines.pop() ?? ''
-    const found = lines
-      .filter((line) => line.startsWith('{'))
-      .map((line) => JSON.parse(line))
-      .find((message) => message.id === 2)
-    if (found) {
-      proc.kill()
-      // 2025-06-18 answers invalid arguments with a JSON-RPC error instead of a result.
-      return found.result ?? { error: found.error }
-    }
-  }
-  throw new Error(`server exited without answering ${name}`)
+  const reply = await requestOnce(
+    'tools/call',
+    { name, arguments: args },
+    { env },
+  )
+  // 2025-06-18 answers invalid arguments with a JSON-RPC error instead of a result.
+  return reply.result ?? { error: reply.error }
 }
 
 describe('slack_unanswered_mentions', () => {

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { chmod, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { requestOnce } from '../scripts/mcp-client.ts'
 
 const REMINDERS = [{ title: 'Pay rent', dueDate: '2026-11-01T09:00:00-07:00' }]
 let dir = ''
@@ -22,7 +23,7 @@ cat "${dir}/reply"
 })
 afterAll(() => rm(dir, { recursive: true, force: true }))
 
-// Starts src/main.ts against the fake CLI, initializes, sends one request as id 2, and returns its reply.
+// Starts src/main.ts against the fake CLI and returns its reply to one request.
 const request = async (
   protocolVersion: string,
   method: string,
@@ -30,49 +31,14 @@ const request = async (
   reply = '[]',
 ) => {
   await Bun.write(join(dir, 'reply'), reply)
-  const server = Bun.spawn(['bun', 'src/main.ts'], {
-    stdin: 'pipe',
-    stdout: 'pipe',
-    stderr: 'inherit',
+  return requestOnce(method, params, {
+    protocolVersion,
     env: {
       ...process.env,
       SWISS_SHORTCUTS_BIN: join(dir, 'shortcuts'),
       TZ: 'America/New_York',
     },
   })
-  for (const message of [
-    {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion,
-        capabilities: {},
-        clientInfo: { name: 'test', version: '0' },
-      },
-    },
-    { jsonrpc: '2.0', method: 'notifications/initialized' },
-    { jsonrpc: '2.0', id: 2, method, params },
-  ]) {
-    server.stdin.write(`${JSON.stringify(message)}\n`)
-  }
-  let buffered = ''
-  for await (const chunk of server.stdout.pipeThrough(
-    new TextDecoderStream(),
-  )) {
-    buffered += chunk
-    const lines = buffered.split('\n')
-    buffered = lines.pop() ?? ''
-    const found = lines
-      .filter((line) => line.startsWith('{'))
-      .map((line) => JSON.parse(line))
-      .find((message) => message.id === 2)
-    if (found) {
-      server.kill()
-      return found
-    }
-  }
-  throw new Error(`server exited without answering ${method}`)
 }
 
 const callTool = (
