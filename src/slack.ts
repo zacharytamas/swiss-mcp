@@ -428,13 +428,11 @@ const markupOf = (
       const body = join(content, '\n')
       return body.length ? body : a.fallback ? parsed(a.fallback) : []
     }),
-    ...(m.files ?? []).map(
-      (f): Nodes => [
-        text(
-          `[${f.mimetype?.startsWith('image/') ? 'image' : 'file'}: ${f.name ?? f.title ?? 'untitled'}]`,
-        ),
-      ],
-    ),
+    ...(m.files ?? []).map((f): Nodes => [
+      text(
+        `[${f.mimetype?.startsWith('image/') ? 'image' : 'file'}: ${f.name ?? f.title ?? 'untitled'}]`,
+      ),
+    ]),
   ]
     .filter((nodes): nodes is Nodes => nodes !== undefined && !blank(nodes))
     .map(trimmed)
@@ -547,7 +545,7 @@ const make = Effect.gen(function* () {
 
   const render = (parts: ReadonlyArray<Nodes>) =>
     Effect.gen(function* () {
-      const nodes = [...parts.flatMap((part) => [...walk(part)])]
+      const nodes = parts.flatMap((part) => [...walk(part)])
       const ids = (type: 'user' | 'channel' | 'usergroup') => [
         ...new Set(
           nodes.flatMap((n) =>
@@ -857,7 +855,7 @@ const make = Effect.gen(function* () {
               Effect.catch(unresolved),
             )
           }
-          if (/^S/.test(id)) {
+          if (id.startsWith('S')) {
             return allUsergroups.pipe(
               Effect.flatMap((gs) => {
                 const g = gs.find((x) => x.id === id)

@@ -11,7 +11,6 @@ import {
   Stream,
 } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
-import { parseListing, type ShortcutContract, Shortcuts } from './shortcuts.ts'
 import {
   ShortcutFailed,
   ShortcutInputInvalid,
@@ -19,6 +18,7 @@ import {
   ShortcutOutputInvalid,
   ShortcutTimedOut,
 } from './shortcuts-errors.ts'
+import { parseListing, type ShortcutContract, Shortcuts } from './shortcuts.ts'
 
 const ID = '46CFA397-9F0C-4CE9-92B1-3C92D17C8EB3'
 const LISTING = `Log Water (11111111-1111-4111-8111-111111111111)\nswiss-json (${ID})\n`

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -26,37 +26,43 @@ export const Json = Schema.toCodecJson(A)
 
 const flagged = (file: string) => {
   const dir = mkdtempSync(join(tmpdir(), 'location-'))
-  writeFileSync(
-    join(dir, 'biome.json'),
-    JSON.stringify({
-      plugins: ['schema-location.grit', 'error-location.grit'].map((rule) =>
-        join(import.meta.dir, rule),
-      ),
-      linter: { rules: { recommended: false } },
-    }),
-  )
-  writeFileSync(join(dir, file), source)
-  const { stdout } = Bun.spawnSync(
-    [
-      join(import.meta.dir, '../node_modules/.bin/biome'),
-      'lint',
-      '--reporter=json',
-      file,
-    ],
-    { cwd: dir },
-  )
-  const report = JSON.parse(stdout.toString()) as {
-    diagnostics: Array<{
-      message: string
-      location: { start: { line: number } }
-    }>
-  }
-  return report.diagnostics
-    .map(
-      (d) =>
-        `${d.location.start.line} ${d.message.includes('*-schema.ts') ? 'schema' : 'error'}`,
+  try {
+    writeFileSync(
+      join(dir, '.oxlintrc.json'),
+      JSON.stringify({
+        categories: { correctness: 'off' },
+        jsPlugins: [join(import.meta.dir, 'location-plugin.js')],
+        rules: {
+          'location/schema-location': 'error',
+          'location/error-location': 'error',
+        },
+      }),
     )
-    .sort()
+    writeFileSync(join(dir, file), source)
+    const { stdout, exitCode } = Bun.spawnSync(
+      [
+        join(import.meta.dir, '../node_modules/.bin/oxlint'),
+        '--format=json',
+        file,
+      ],
+      { cwd: dir },
+    )
+    const report = JSON.parse(stdout.toString()) as {
+      diagnostics: Array<{
+        message: string
+        labels: Array<{ span: { line: number } }>
+      }>
+    }
+    expect(exitCode).toBe(report.diagnostics.length > 0 ? 1 : 0)
+    return report.diagnostics
+      .map(
+        (d) =>
+          `${d.labels[0]?.span.line} ${d.message.includes('*-schema.ts') ? 'schema' : 'error'}`,
+      )
+      .sort()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 test('flags named Schemas and error classes, not values derived from Schemas', () => {

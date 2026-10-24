@@ -1,0 +1,10 @@
+{
+  "printWidth": 80,
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "singleQuote": true,
+  "semi": false,
+  "sortImports": {
+    "newlinesBetween": false,
+    "partitionByNewline": true
+  }
+}
