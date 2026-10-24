@@ -3,7 +3,6 @@
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "singleQuote": true,
   "semi": false,
-  "sortPackageJson": false,
   "sortImports": {
     "newlinesBetween": false,
     "partitionByNewline": true
