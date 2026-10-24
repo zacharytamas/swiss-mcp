@@ -27,21 +27,11 @@ export const Json = Schema.toCodecJson(A)
 const flagged = (file: string) => {
   const dir = mkdtempSync(join(tmpdir(), 'location-'))
   try {
-    writeFileSync(
-      join(dir, '.oxlintrc.json'),
-      JSON.stringify({
-        categories: { correctness: 'off' },
-        jsPlugins: [join(import.meta.dir, 'location-plugin.js')],
-        rules: {
-          'location/schema-location': 'error',
-          'location/error-location': 'error',
-        },
-      }),
-    )
     writeFileSync(join(dir, file), source)
     const { stdout, exitCode } = Bun.spawnSync(
       [
         join(import.meta.dir, '../node_modules/.bin/oxlint'),
+        `--config=${join(import.meta.dir, '../.oxlintrc.json')}`,
         '--format=json',
         file,
       ],
@@ -49,15 +39,16 @@ const flagged = (file: string) => {
     )
     const report = JSON.parse(stdout.toString()) as {
       diagnostics: Array<{
-        message: string
+        code: string
         labels: Array<{ span: { line: number } }>
       }>
     }
     expect(exitCode).toBe(report.diagnostics.length > 0 ? 1 : 0)
     return report.diagnostics
+      .filter((d) => d.code.startsWith('location('))
       .map(
         (d) =>
-          `${d.labels[0]?.span.line} ${d.message.includes('*-schema.ts') ? 'schema' : 'error'}`,
+          `${d.labels[0]?.span.line} ${d.code === 'location(schema-location)' ? 'schema' : 'error'}`,
       )
       .sort()
   } finally {
