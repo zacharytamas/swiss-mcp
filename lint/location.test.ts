@@ -25,6 +25,7 @@ export const Json = Schema.toCodecJson(A)
 export const literal2 = ((s: string) => Schema.Literal(s)) satisfies Function
 export const Expr = class Expr extends Data.TaggedError('Expr')<{}> {}
 export default class extends Error {}
+export const makeArray = Schema.Array<typeof Schema.String>
 `
 
 const flagged = (file: string) => {
@@ -70,6 +71,7 @@ test('flags named Schemas and error classes, not values derived from Schemas', (
     '20 schema',
     '21 error',
     '22 error',
+    '23 schema',
     '3 schema',
     '4 schema',
     '5 error',
@@ -97,6 +99,7 @@ test('allows error classes only in *-errors.ts', () => {
     '19 schema',
     '2 schema',
     '20 schema',
+    '23 schema',
     '3 schema',
     '4 schema',
   ])
