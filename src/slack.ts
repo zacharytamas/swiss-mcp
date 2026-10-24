@@ -545,7 +545,7 @@ const make = Effect.gen(function* () {
 
   const render = (parts: ReadonlyArray<Nodes>) =>
     Effect.gen(function* () {
-      const nodes = [...parts.flatMap((part) => [...walk(part)])]
+      const nodes = parts.flatMap((part) => [...walk(part)])
       const ids = (type: 'user' | 'channel' | 'usergroup') => [
         ...new Set(
           nodes.flatMap((n) =>
@@ -855,7 +855,7 @@ const make = Effect.gen(function* () {
               Effect.catch(unresolved),
             )
           }
-          if (/^S/.test(id)) {
+          if (id.startsWith('S')) {
             return allUsergroups.pipe(
               Effect.flatMap((gs) => {
                 const g = gs.find((x) => x.id === id)
