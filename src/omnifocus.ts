@@ -30,24 +30,19 @@ import {
   OmniFocusUpdateConflict,
 } from './omnifocus-errors.ts'
 import {
-  Clear,
   CompleteResult,
-  DeferDate,
-  DueDate,
+  CompleteTaskParams,
+  CreateTaskParams,
   PerspectiveInfo,
   PerspectiveList,
-  RepeatChange,
-  RepeatInput,
+  PerspectiveParams,
   ScriptFailure,
-  SeenDeferDate,
   Snapshot,
   TagList,
-  TagRefs,
   Task,
-  TaskId,
-  TaskName,
   TaskResult,
   ToolFailure,
+  UpdateTaskParams,
 } from './omnifocus-schema.ts'
 import {
   completeTask,
@@ -230,12 +225,7 @@ export const OmniFocusToolkit = Toolkit.make(
   omnifocusTool(
     'omnifocus_perspective_tasks',
     "The tasks an OmniFocus custom perspective shows, worked out from the perspective's own filter rules over every remaining task. They come in OmniFocus database order (Inbox first), not the perspective's sort order, and without its grouping. A project the perspective matches is listed as a task whose project is itself. A perspective with a rule this server can't evaluate is OmniFocusPerspectiveUnsupported, naming the rule; omnifocus_list_perspectives shows which are supported.",
-    Schema.Struct({
-      perspective: TaskName.annotate({
-        description:
-          "The custom perspective's exact name, as omnifocus_list_perspectives lists it.",
-      }),
-    }),
+    PerspectiveParams,
     Schema.Struct({ perspective: Schema.String, tasks: Schema.Array(Task) }),
     'reads',
   ),
@@ -249,46 +239,21 @@ export const OmniFocusToolkit = Toolkit.make(
   omnifocusTool(
     'omnifocus_create_task',
     `Add a task to the OmniFocus Inbox, as Quick Entry does. ${dates} Tags must already exist; they are never created. ${repeats} ${stored}`,
-    Schema.Struct({
-      name: TaskName,
-      note: Schema.optional(Schema.String),
-      tags: Schema.optional(TagRefs),
-      deferDate: Schema.optional(DeferDate),
-      dueDate: Schema.optional(DueDate),
-      repeat: Schema.optional(RepeatInput),
-    }),
+    CreateTaskParams,
     TaskResult,
     'adds',
   ),
   omnifocusTool(
     'omnifocus_update_task',
     `Change one OmniFocus task. Fields you leave out stay as they are; to remove deferDate, dueDate or repeat, name it in clear. tags replaces all of the task's tags ([] removes them). repeat changes only the fields you give and keeps the rest of the existing rule; for a task that does not repeat yet it needs a rule. ${dates} ${repeats} ${stored}`,
-    Schema.Struct({
-      id: TaskId,
-      name: Schema.optional(TaskName),
-      note: Schema.optional(Schema.String),
-      tags: Schema.optional(TagRefs),
-      deferDate: Schema.optional(DeferDate),
-      dueDate: Schema.optional(DueDate),
-      repeat: Schema.optional(RepeatChange),
-      clear: Schema.optional(Clear),
-    }),
+    UpdateTaskParams,
     TaskResult,
     'changes',
   ),
   omnifocusTool(
     'omnifocus_complete_task',
     "Complete the occurrence of an OmniFocus task that you last saw. Pass the deferDate a tool returned for it: if the task has moved on since (completed on another device, or by an earlier call), nothing changes and the result is OmniFocusOccurrenceMoved. That check only looks at deferDate, so it can't tell apart occurrences of a repeating task that has no defer date. Completing a completed task that does not repeat changes nothing.",
-    Schema.Struct({
-      id: TaskId,
-      deferDate: SeenDeferDate,
-      skip: Schema.optional(
-        Schema.Boolean.annotate({
-          description:
-            'true drops just this occurrence of a repeating task instead of completing it, so the task moves on to its next occurrence. A task that does not repeat is OmniFocusNotRepeating.',
-        }),
-      ),
-    }),
+    CompleteTaskParams,
     CompleteResult,
     'changes',
   ),
