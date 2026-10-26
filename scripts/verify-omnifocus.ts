@@ -193,6 +193,17 @@ if (write) {
           ? `next is ${JSON.stringify(next)}`
           : undefined,
     )
+
+    await check(
+      'omnifocus_update_task',
+      { id, clear: ['repeat', 'deferDate'] },
+      ({ task }) =>
+        task?.repeat !== null || task?.deferDate !== null
+          ? `repeat ${JSON.stringify(task?.repeat)}, deferDate ${task?.deferDate} after clearing both`
+          : task.note !== 'updated by verify-omnifocus'
+            ? 'clearing changed the note'
+            : undefined,
+    )
   } catch (e) {
     report('write checks', (e as Error).message)
   } finally {
