@@ -122,6 +122,7 @@ class FakeTask {
     public name: string,
     public position?: unknown,
   ) {
+    this.containingProject = projects.find((p) => p.ending === position) ?? null
     tasks.push(this)
   }
   get effectiveDeferDate() {
@@ -219,7 +220,17 @@ beforeEach(() => {
   ]
   const domestic = { name: 'Domestic', parent: null }
   housekeeping = project('housekeeping', 'Housekeeping', domestic)
-  projects = [housekeeping]
+  // Two projects named Garden: the top-level one is also a full path.
+  projects = [
+    housekeeping,
+    project('garden', 'Garden'),
+    project('domestic-garden', 'Garden', domestic),
+    project('home-shopping', 'Shopping', { name: 'Home', parent: null }),
+    project('work-shopping', 'Shopping', { name: 'Work', parent: null }),
+    project('bikes', 'Bikes', null, ProjectStatus.OnHold),
+    project('taxes', 'Taxes', null, ProjectStatus.Done),
+    project('cello', 'Cello', null, ProjectStatus.Dropped),
+  ]
 })
 
 const strange = `Call "Dad" about Zoë's \\ backslash\nsecond line 🎉`
@@ -247,6 +258,19 @@ describe('createTask', () => {
       repeat: null,
     })
     expect(tasks[0]?.position).toBe('inbox.ending')
+  })
+
+  test.each([
+    ['Domestic/Housekeeping', 'housekeeping', 'Domestic/Housekeeping'],
+    ['Housekeeping', 'housekeeping', 'Domestic/Housekeeping'],
+    ['Garden', 'garden', 'Garden'],
+    // On hold, which still takes tasks.
+    ['Bikes', 'bikes', 'Bikes'],
+  ])('creates at the end of the project %s', (ref, id, path) => {
+    const { task } = evaluate(createTask, { name: 'x', project: ref })
+
+    expect(task.project).toBe(path)
+    expect(tasks[0]?.position).toBe(`${id}.ending`)
   })
 
   test('a date alone for dueDate takes the default due time', () => {
@@ -304,6 +328,14 @@ describe('createTask', () => {
       'OmniFocusRepeatInvalid',
       'Unknown rule',
     ],
+    [{ project: 'Nope' }, 'OmniFocusProjectNotFound', '"Nope"'],
+    [
+      { project: 'Shopping' },
+      'OmniFocusProjectAmbiguous',
+      '"Home/Shopping", "Work/Shopping"',
+    ],
+    [{ project: 'Taxes' }, 'OmniFocusProjectClosed', '"Taxes" is completed'],
+    [{ project: 'Cello' }, 'OmniFocusProjectClosed', '"Cello" is dropped'],
   ])('refuses %j before creating anything', (fields, error, detail) => {
     const reply = evaluate(createTask, { name: 'x', ...fields })
 

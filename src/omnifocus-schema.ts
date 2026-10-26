@@ -199,6 +199,10 @@ const TagRefs = Schema.Array(NonEmpty).annotate({
   description:
     'Tags by full path such as "Slot/Morning", or by a name only one tag has. An unknown or ambiguous tag is an error; tags are never created.',
 })
+const ProjectRef = NonEmpty.annotate({
+  description:
+    'A project by full path such as "Domestic/Housekeeping", or by a name only one project has. An unknown or ambiguous project is an error, and so is a completed or dropped one; projects are never created.',
+})
 const DeferDate = LocalDate('default start time (Settings > Dates & Times)')
 const DueDate = LocalDate('default due time (Settings > Dates & Times)')
 
@@ -237,6 +241,7 @@ export const PerspectiveParams = Schema.Struct({
 export const CreateTaskParams = Schema.Struct({
   name: TaskName,
   note: Omittable(Schema.String),
+  project: Omittable(ProjectRef),
   tags: Omittable(TagRefs),
   deferDate: Omittable(DeferDate),
   dueDate: Omittable(DueDate),

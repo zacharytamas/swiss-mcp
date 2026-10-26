@@ -380,6 +380,7 @@ describe('OmniFocus tools over MCP', () => {
     const args = {
       name: strange,
       note: strange,
+      project: 'Domestic/Housekeeping',
       tags: ['Slot/Morning', strange],
       deferDate: '2026-10-27',
       repeat: { rule: 'FREQ=DAILY' },

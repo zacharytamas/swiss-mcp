@@ -365,8 +365,10 @@ export const listProjects: Script<NoArgs> = (_, omni) => ({
   })),
 })
 
-// Into the Inbox, as Quick Entry does. Everything that can be refused is checked before the task exists.
+// To the end of the project, or into the Inbox as Quick Entry does. Everything that can be refused is checked before the
+// task exists.
 export const createTask: Script<CreateTaskParams> = (args, omni) => {
+  const project = args.project === undefined ? null : omni.project(args.project)
   const tags = omni.tags(args.tags ?? [])
   const deferDate =
     args.deferDate === undefined
@@ -389,7 +391,10 @@ export const createTask: Script<CreateTaskParams> = (args, omni) => {
           repeat.catchUp ?? null,
         )
 
-  const task = new Task(args.name, inbox.ending)
+  const task = new Task(
+    args.name,
+    project === null ? inbox.ending : project.ending,
+  )
   if (args.note !== undefined) task.note = args.note
   task.addTags(tags)
   task.deferDate = deferDate
