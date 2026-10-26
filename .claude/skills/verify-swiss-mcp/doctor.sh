@@ -14,8 +14,8 @@ if [ -d node_modules/effect ]; then say PASS 'deps installed'
 else say FAIL 'deps missing: run bun install'; fi
 
 count=$(MCP_CALL_TIMEOUT_MS=60000 bun scripts/mcp-call.ts 2>/dev/null | jq '.result.tools | length' 2>/dev/null)
-if [ "${count:-0}" -eq 19 ]; then say PASS 'server answers tools/list with 19 tools'
-else say FAIL "server tools/list: expected 19 tools, got ${count:-no reply}"; fi
+if [ "${count:-0}" -eq 25 ]; then say PASS 'server answers tools/list with 25 tools'
+else say FAIL "server tools/list: expected 25 tools, got ${count:-no reply}"; fi
 
 if shortcuts list | grep -qx swiss-due; then say PASS 'swiss-due shortcut installed'
 else say FAIL 'swiss-due shortcut missing: Due features cannot run (README Due setup)'; fi
