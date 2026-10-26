@@ -6,11 +6,13 @@ import {
   Effect,
   Exit,
   Layer,
+  Option,
   Schema,
   Sink,
   Stream,
 } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
+import { Focus } from './focus.ts'
 import {
   ShortcutFailed,
   ShortcutInputInvalid,
@@ -81,14 +83,76 @@ const fakeCli = (onRun: (inputJson: string) => Reply, listing = LISTING) => {
   return { spawned, layer }
 }
 
+// Answers `list` with LISTING; `run` never exits until its scope closes, which marks it killed.
+const hanging = () => {
+  let killed = false
+  const layer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
+    ChildProcessSpawner.make((command) =>
+      Effect.gen(function* () {
+        if (
+          ChildProcess.isStandardCommand(command) &&
+          command.args[0] === 'list'
+        ) {
+          return handleFor({ stdout: LISTING, stderr: '', code: 0 })
+        }
+        const done = yield* Deferred.make<number>()
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            killed = true
+          }).pipe(Effect.andThen(Deferred.succeed(done, 143))),
+        )
+        return ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(2),
+          exitCode: Effect.map(
+            Deferred.await(done),
+            ChildProcessSpawner.ExitCode,
+          ),
+          isRunning: Effect.map(Deferred.isDone(done), (settled) => !settled),
+          kill: () => Effect.asVoid(Deferred.succeed(done, 143)),
+          stdin: Sink.drain,
+          stdout: Stream.never,
+          stderr: Stream.never,
+          all: Stream.never,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+          unref: Effect.succeed(Effect.void),
+        })
+      }),
+    ),
+  )
+  return { killed: () => killed, layer }
+}
+
+// Reports each of `fronts` in turn as the frontmost app (the last one repeats), recording every call.
+const fakeFocus = (...fronts: ReadonlyArray<string | undefined>) => {
+  const calls: Array<string> = []
+  let reads = 0
+  const layer = Layer.succeed(Focus)(
+    Focus.of({
+      frontmost: Effect.sync(() => {
+        const front = fronts[Math.min(reads++, fronts.length - 1)]
+        calls.push(`frontmost ${front ?? 'none'}`)
+        return Option.fromNullishOr(front)
+      }),
+      activate: (bundleId) =>
+        Effect.sync(() => {
+          calls.push(`activate ${bundleId}`)
+        }),
+    }),
+  )
+  return { calls, layer }
+}
+
 const runWith = <A, E>(
   layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>,
   effect: Effect.Effect<A, E, Shortcuts>,
+  focus: Layer.Layer<Focus> = fakeFocus().layer,
 ) =>
   Effect.runPromiseExit(
     effect.pipe(
       Effect.provide(Shortcuts.layer),
       Effect.provide(layer),
+      Effect.provide(focus),
       Effect.provide(BunFileSystem.layer),
     ),
   )
@@ -261,44 +325,10 @@ describe('Shortcuts.run', () => {
   })
 
   test('reports ShortcutTimedOut and kills a run that never exits', async () => {
-    let killed = false
-    const hanging = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
-      ChildProcessSpawner.make((command) =>
-        Effect.gen(function* () {
-          if (
-            ChildProcess.isStandardCommand(command) &&
-            command.args[0] === 'list'
-          ) {
-            return handleFor({ stdout: LISTING, stderr: '', code: 0 })
-          }
-          const done = yield* Deferred.make<number>()
-          yield* Effect.addFinalizer(() =>
-            Effect.sync(() => {
-              killed = true
-            }).pipe(Effect.andThen(Deferred.succeed(done, 143))),
-          )
-          return ChildProcessSpawner.makeHandle({
-            pid: ChildProcessSpawner.ProcessId(2),
-            exitCode: Effect.map(
-              Deferred.await(done),
-              ChildProcessSpawner.ExitCode,
-            ),
-            isRunning: Effect.map(Deferred.isDone(done), (settled) => !settled),
-            kill: () => Effect.asVoid(Deferred.succeed(done, 143)),
-            stdin: Sink.drain,
-            stdout: Stream.never,
-            stderr: Stream.never,
-            all: Stream.never,
-            getInputFd: () => Sink.drain,
-            getOutputFd: () => Stream.empty,
-            unref: Effect.succeed(Effect.void),
-          })
-        }),
-      ),
-    )
+    const cli = hanging()
 
     const exit = await runWith(
-      hanging,
+      cli.layer,
       call({ greeting: 'hi', count: 1 }, { ...contract, timeout: '20 millis' }),
     )
 
@@ -310,6 +340,97 @@ describe('Shortcuts.run', () => {
           'swiss-json timed out after 20 ms. It may still have run, so do not retry blindly. A pending macOS permission prompt is the usual cause.',
       }),
     )
-    expect(killed).toBe(true)
+    expect(cli.killed()).toBe(true)
+  })
+})
+
+describe('Shortcuts.run with stealsFocus', () => {
+  const DUE = 'com.dueapps.duemac-setapp'
+  const stealing = { ...contract, stealsFocus: [DUE, 'com.phocusllp.duemac'] }
+  const echo = fakeCli((json) => ({ stdout: json, stderr: '', code: 0 }))
+  const runStealing = async (
+    focus: ReturnType<typeof fakeFocus>,
+    cli: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> = echo.layer,
+    c: typeof contract = stealing,
+  ) => {
+    const exit = await runWith(
+      cli,
+      call({ greeting: 'hi', count: 1 }, c),
+      focus.layer,
+    )
+    return {
+      exit,
+      activated: focus.calls.filter((line) => line.startsWith('activate')),
+    }
+  }
+
+  test('hands focus back when a thief took it', async () => {
+    const { exit, activated } = await runStealing(
+      fakeFocus('com.t3tools.t3code', DUE),
+    )
+
+    expect(exit).toEqual(Exit.succeed({ greeting: 'hi', count: 1 }))
+    expect(activated).toEqual(['activate com.t3tools.t3code'])
+  })
+
+  test('recognises every listed thief', async () => {
+    const { activated } = await runStealing(
+      fakeFocus('com.t3tools.t3code', 'com.phocusllp.duemac'),
+    )
+
+    expect(activated).toEqual(['activate com.t3tools.t3code'])
+  })
+
+  test('leaves an app the user switched to in front', async () => {
+    const { activated } = await runStealing(
+      fakeFocus('com.t3tools.t3code', 'com.apple.Safari'),
+    )
+
+    expect(activated).toEqual([])
+  })
+
+  test('leaves the thief in front when it was already there', async () => {
+    const { activated } = await runStealing(fakeFocus(DUE, DUE))
+
+    expect(activated).toEqual([])
+  })
+
+  test('does nothing when the app in front before the run is unknown', async () => {
+    const { activated } = await runStealing(fakeFocus(undefined, DUE))
+
+    expect(activated).toEqual([])
+  })
+
+  test('hands focus back when the run fails', async () => {
+    const failing = fakeCli(() => ({ stdout: '', stderr: 'boom\n', code: 1 }))
+
+    const { exit, activated } = await runStealing(
+      fakeFocus('com.t3tools.t3code', DUE),
+      failing.layer,
+    )
+
+    expect(failureOf(exit)).toBeInstanceOf(ShortcutFailed)
+    expect(activated).toEqual(['activate com.t3tools.t3code'])
+  })
+
+  test('hands focus back when the run times out', async () => {
+    const { exit, activated } = await runStealing(
+      fakeFocus('com.t3tools.t3code', DUE),
+      hanging().layer,
+      { ...stealing, timeout: '20 millis' },
+    )
+
+    expect(failureOf(exit)).toBeInstanceOf(ShortcutTimedOut)
+    expect(activated).toEqual(['activate com.t3tools.t3code'])
+  })
+
+  test('never touches Focus for a contract without stealsFocus, or with none listed', async () => {
+    for (const c of [contract, { ...contract, stealsFocus: [] }]) {
+      const focus = fakeFocus('com.t3tools.t3code', DUE)
+
+      await runStealing(focus, echo.layer, c)
+
+      expect(focus.calls).toEqual([])
+    }
   })
 })

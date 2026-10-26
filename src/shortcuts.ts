@@ -9,6 +9,7 @@ import {
   Stream,
 } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
+import { Focus, keepFocus } from './focus.ts'
 import {
   type ShortcutError,
   ShortcutFailed,
@@ -31,6 +32,9 @@ export interface ShortcutContract<I extends JsonCodec, O extends JsonCodec> {
   // A shortcut whose last action produced nothing (e.g. a Find with no matches) prints nothing; this JSON is decoded
   // instead. Without it, empty output is ShortcutOutputInvalid.
   readonly whenEmpty?: string
+  // Bundle ids of apps that bring themselves to the front while the shortcut runs; focus is handed back to the app that
+  // had it.
+  readonly stealsFocus?: ReadonlyArray<string>
 }
 
 // `shortcuts list --show-identifiers` prints `Name (UUID)`; names may themselves contain parentheses.
@@ -51,6 +55,7 @@ export const parseListing = (
 const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const fs = yield* FileSystem.FileSystem
+  const focus = yield* Focus
   // Overridable so the whole server can be exercised against a fake CLI on machines without Shortcuts.
   const bin = yield* Config.String('SWISS_SHORTCUTS_BIN').pipe(
     Config.withDefault('/usr/bin/shortcuts'),
@@ -153,7 +158,7 @@ const make = Effect.gen(function* () {
           })
           const inputPath = `${directory}/input.json`
           yield* fs.writeFileString(inputPath, json)
-          return yield* exec([
+          const running = exec([
             'run',
             id,
             '-i',
@@ -163,6 +168,9 @@ const make = Effect.gen(function* () {
             '--output-type',
             'public.plain-text',
           ])
+          return yield* contract.stealsFocus?.length
+            ? keepFocus(focus, contract.stealsFocus, running)
+            : running
         }),
       ).pipe(Effect.mapError((cause) => failed(-1, '', cause.message)))
     }).pipe(
