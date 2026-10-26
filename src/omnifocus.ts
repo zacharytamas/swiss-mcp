@@ -45,7 +45,7 @@ import {
   snapshot,
   updateTask,
 } from './omnifocus-scripts.ts'
-import { matchingTasks, parsePerspective } from './perspectives.ts'
+import { perspectiveFilter } from './perspectives.ts'
 
 const OUTPUT_LIMIT = 4096
 
@@ -278,9 +278,10 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
           message: `${others.length + 1} OmniFocus custom perspectives are named "${name}"; rename the extras in OmniFocus so the right one is used.`,
         })
       }
-      const filter = parsePerspective(
+      const filter = perspectiveFilter(
         perspective.rules,
         perspective.aggregation,
+        tags,
       )
       if (Result.isFailure(filter)) {
         return yield* new OmniFocusPerspectiveUnsupported({
@@ -291,7 +292,7 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
       }
       return {
         perspective: name,
-        tasks: matchingTasks(filter.success, tags, tasks).map(toTask),
+        tasks: tasks.filter(filter.success).map(toTask),
       }
     })
 
@@ -304,10 +305,10 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
             PerspectiveList,
           )
           .pipe(
-            Effect.map(({ perspectives }) => ({
+            Effect.map(({ tags, perspectives }) => ({
               perspectives: perspectives.map(
                 ({ id, name, rules, aggregation }) =>
-                  Result.match(parsePerspective(rules, aggregation), {
+                  Result.match(perspectiveFilter(rules, aggregation, tags), {
                     onSuccess: () => ({ id, name, supported: true }),
                     onFailure: (reason) => ({
                       id,
