@@ -1,6 +1,6 @@
 # swiss-mcp
 
-An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Effect](https://effect.website), run on [Bun](https://bun.sh). It speaks MCP over stdio. Its tools fall into three groups. **Due** drives the Due app on macOS through Apple Shortcuts. **Slack** reads Slack and manages your reactions through the Slack Web API with your user token. **YNAB** computes budget numbers from the YNAB API.
+An [MCP](https://modelcontextprotocol.io) server written in TypeScript with [Effect](https://effect.website), run on [Bun](https://bun.sh). It speaks MCP over stdio. Its tools fall into four groups. **Due** drives the Due app on macOS through Apple Shortcuts. **OmniFocus** reads your perspectives and adds, changes and completes tasks in OmniFocus on macOS through Omni Automation. **Slack** reads Slack and manages your reactions through the Slack Web API with your user token. **YNAB** computes budget numbers from the YNAB API.
 
 ```sh
 bun install
@@ -48,6 +48,49 @@ Measured on Due 26.4.4:
 - Reminders whose title has no letter, digit or space aren't listed.
 - There's no way to list timers.
 - An unknown timer name times out after 10 seconds.
+
+## OmniFocus
+
+| Tool                          | What it does                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------- |
+| `omnifocus_list_perspectives` | List custom perspectives and whether their tasks can be worked out here                     |
+| `omnifocus_perspective_tasks` | The tasks a custom perspective shows, by its exact `perspective` name                       |
+| `omnifocus_list_tags`         | List tags with their full paths (`Slot/Morning`) and status                                 |
+| `omnifocus_create_task`       | Add a task to the Inbox (`name`, `note`, `tags`, `deferDate`, `dueDate`, `repeat`)          |
+| `omnifocus_update_task`       | Change a task by `id`; leave a field out to keep it, `null` clears a date or the repeat     |
+| `omnifocus_complete_task`     | Complete the occurrence whose `deferDate` you saw, or with `skip` drop just that occurrence |
+
+### How it works
+
+The server runs `osascript -l JavaScript`, which hands an OmniJS program to OmniFocus with `evaluateJavascript`. Each program is a TypeScript function in `src/omnifocus-scripts.ts`, sent as source text with its arguments as one JSON literal, and its JSON answer is decoded with an Effect Schema. Calls run one at a time and time out after 30 seconds. Failures come back as tagged errors (`OmniFocusFailed`, `OmniFocusTimedOut`, `OmniFocusOutputInvalid`, `OmniFocusTaskNotFound`, `OmniFocusTagNotFound`, `OmniFocusTagAmbiguous`, `OmniFocusRepeatInvalid`, `OmniFocusNotRepeating`, `OmniFocusOccurrenceMoved`, `OmniFocusPerspectiveNotFound`, `OmniFocusPerspectiveAmbiguous`, `OmniFocusPerspectiveUnsupported`). See `src/omnifocus.ts`.
+
+A perspective's tasks are worked out in `src/perspectives.ts`. One call reads every remaining task, the tags, and each custom perspective's filter rules, and the rules are evaluated the way OmniFocus does: a tag also matches the tags nested under it, and a rule whose tags were all deleted is ignored.
+
+What a task means is left to OmniFocus. `status` is OmniFocus's own task status. A date without a time gets the default start or due time from OmniFocus's settings. A repeat is an OmniFocus repetition rule, and any field you leave out gets OmniFocus's default. Completing a repeating task twice moves it on twice, so `omnifocus_complete_task` takes the `deferDate` you saw and changes nothing if the task has moved on since. No tool creates tags or perspectives or deletes tasks.
+
+### Setup
+
+- OmniFocus 4.7 or later, with Pro: Omni Automation needs Pro.
+- The first call makes macOS ask whether the app running the server (your terminal or MCP client) may control OmniFocus. Allow it once. Until it's answered, calls end in `OmniFocusTimedOut`. If it was denied, calls fail with `OmniFocusFailed` (-1743); allow it in System Settings → Privacy & Security → Automation.
+
+### Verify
+
+```sh
+bun scripts/verify-omnifocus.ts            # read-only: perspectives, tags, and each supported perspective's tasks
+bun scripts/verify-omnifocus.ts --write    # also creates, updates, completes and skips a throwaway repeating task, then deletes it
+bun scripts/verify-omnifocus.ts --parity   # compares each supported perspective with what OmniFocus shows in a temporary tab
+```
+
+### Known limits
+
+Measured on OmniFocus 4.9.3:
+
+- Dates are this Mac's local wall-clock time, to the minute.
+- `omnifocus_perspective_tasks` lists tasks in database order (Inbox first), not in the perspective's sort order, and without its grouping.
+- Only these perspective rules are evaluated: availability (available or remaining), has any or all of some tags, has no children, has a defer date, nested all/any/none groups, and disabled rules. A perspective with any other rule is unsupported, and so is one that could show completed or dropped items (such as the Completed and Changed perspectives). `omnifocus_list_perspectives` says why.
+- Perspectives are read-only by design. No tool creates or edits one, and built-in perspectives such as Forecast aren't available.
+- `omnifocus_complete_task` tells occurrences apart by `deferDate`, so for a repeating task without a defer date it can't stop a second completion.
+- Tags must already exist. A tag is given by its full path or by a name only one tag has.
 
 ## Slack
 
