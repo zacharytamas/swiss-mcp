@@ -145,13 +145,17 @@ if (write) {
   return JSON.stringify(null)
 })(${JSON.stringify(project)}, ${JSON.stringify(dropped)})`,
     )
-    await step('omnifocus_list_projects', {}, ({ projects }) => {
-      const status = (path: string) =>
-        projects?.find((p: Item) => p.path === path)?.status
-      return status(project) !== 'Active' || status(dropped) !== 'Dropped'
-        ? `the throwaway projects are listed as ${status(project)} and ${status(dropped)}`
-        : undefined
-    })
+    const { projects } = await step(
+      'omnifocus_list_projects',
+      {},
+      ({ projects }) => {
+        const status = (path: string) =>
+          projects?.find((p: Item) => p.path === path)?.status
+        return status(project) !== 'Active' || status(dropped) !== 'Dropped'
+          ? `the throwaway projects are listed as ${status(project)} and ${status(dropped)}`
+          : undefined
+      },
+    )
 
     const created = await step(
       'omnifocus_create_task',
@@ -256,10 +260,14 @@ if (write) {
           ? `project is ${task?.project} after clearing it`
           : undefined,
     )
-    await step('omnifocus_update_task', { id, project }, ({ task }) =>
-      task?.project !== project
-        ? `project is ${task?.project}, not the throwaway project`
-        : undefined,
+    const projectId = projects.find((p: Item) => p.path === project).id
+    await step(
+      'omnifocus_update_task',
+      { id, project: projectId },
+      ({ task }) =>
+        task?.project !== project
+          ? `project is ${task?.project}, not the throwaway project`
+          : undefined,
     )
 
     const closed = await call('omnifocus_create_task', {
