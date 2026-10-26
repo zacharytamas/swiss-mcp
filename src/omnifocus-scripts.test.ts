@@ -79,6 +79,7 @@ const project = (
 let tasks: Array<FakeTask> = []
 let tags: Array<FakeTag> = []
 let projects: Array<FakeProject> = []
+let moves: Array<[ReadonlyArray<string>, unknown]> = []
 let ruleCalls: Array<ReadonlyArray<unknown>> = []
 let nextId = 1
 
@@ -117,6 +118,7 @@ class FakeTask {
   tags: Array<FakeTag> = []
   children: Array<FakeTask> = []
   containingProject: FakeProject | null = null
+  project: FakeProject | null = null
   repetitionRule: FakeRule | null = null
   constructor(
     public name: string,
@@ -188,6 +190,12 @@ const globals = () => ({
     return [...projects]
   },
   inbox: { ending: 'inbox.ending' },
+  moveTasks: (moved: ReadonlyArray<FakeTask>, position: unknown) => {
+    moves.push([moved.map((t) => t.id.primaryKey), position])
+    for (const t of moved) {
+      t.containingProject = projects.find((p) => p.ending === position) ?? null
+    }
+  },
   settings: {
     objectForKey: (key: string) =>
       ({ DefaultStartTime: '06:00:00', DefaultDueTime: '17:00' })[key],
@@ -206,6 +214,7 @@ let housekeeping: FakeProject
 beforeEach(() => {
   tasks = []
   ruleCalls = []
+  moves = []
   slot = tag('slot', 'Slot')
   morning = tag('morning', 'Morning', slot)
   // Two tags named Errands: the top-level one is also a full path.
@@ -455,6 +464,81 @@ describe('updateTask', () => {
 
     expect(reply._tag).toBe('OmniFocusTagNotFound')
     expect([task.name, task.tags]).toEqual(['Existing', [morning]])
+  })
+
+  test('project moves the task to the end of that project, and clearing project moves it to the Inbox', () => {
+    const task = existing()
+
+    const moved = evaluate(updateTask, {
+      id: task.id.primaryKey,
+      project: 'Domestic/Housekeeping',
+    })
+    const back = evaluate(updateTask, {
+      id: task.id.primaryKey,
+      clear: ['project'],
+    })
+
+    expect(moved.task.project).toBe('Domestic/Housekeeping')
+    expect(back.task.project).toBeNull()
+    expect(moves).toEqual([
+      [[task.id.primaryKey], 'housekeeping.ending'],
+      [[task.id.primaryKey], 'inbox.ending'],
+    ])
+  })
+
+  test('a task already where it should go is not moved', () => {
+    const inProject = existing({ containingProject: housekeeping })
+    const inInbox = existing()
+
+    evaluate(updateTask, {
+      id: inProject.id.primaryKey,
+      project: 'Housekeeping',
+    })
+    evaluate(updateTask, { id: inInbox.id.primaryKey, clear: ['project'] })
+
+    expect(moves).toEqual([])
+  })
+
+  test.each([[{ project: 'Garden' }], [{ clear: ['project'] as const }]])(
+    "refuses to move a project's own task with %j, and changes nothing",
+    (fields) => {
+      const task = existing({
+        containingProject: housekeeping,
+        project: housekeeping,
+      })
+
+      const reply = evaluate(updateTask, {
+        id: task.id.primaryKey,
+        name: 'Renamed',
+        ...fields,
+      })
+
+      expect(reply._tag).toBe('OmniFocusTaskIsProject')
+      expect(reply.message).toContain('"Domestic/Housekeeping" itself')
+      expect([task.name, moves]).toEqual(['Existing', []])
+    },
+  )
+
+  test.each([
+    [{ project: 'Nope' }, 'OmniFocusProjectNotFound'],
+    [{ project: 'Shopping' }, 'OmniFocusProjectAmbiguous'],
+    [{ project: 'Taxes' }, 'OmniFocusProjectClosed'],
+    [{ project: 'Cello' }, 'OmniFocusProjectClosed'],
+    [
+      { project: 'Housekeeping', clear: ['project'] as const },
+      'OmniFocusUpdateConflict',
+    ],
+  ])('%j is %s and changes nothing at all', (fields, error) => {
+    const task = existing()
+
+    const reply = evaluate(updateTask, {
+      id: task.id.primaryKey,
+      name: 'Renamed',
+      ...fields,
+    })
+
+    expect(reply._tag).toBe(error)
+    expect([task.name, moves]).toEqual(['Existing', []])
   })
 
   test('an unknown id is OmniFocusTaskNotFound', () => {

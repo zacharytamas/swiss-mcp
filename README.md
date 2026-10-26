@@ -51,19 +51,19 @@ Measured on Due 26.4.4:
 
 ## OmniFocus
 
-| Tool                          | What it does                                                                                                      |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `omnifocus_list_perspectives` | List custom perspectives and whether their tasks can be worked out here                                           |
-| `omnifocus_perspective_tasks` | The tasks a custom perspective shows, by its exact `perspective` name                                             |
-| `omnifocus_list_tags`         | List tags with their full paths (`Slot/Morning`) and status                                                       |
-| `omnifocus_list_projects`     | List projects with their full paths (`Domestic/Housekeeping`) and status                                          |
-| `omnifocus_create_task`       | Add a task to a `project`, or to the Inbox without one (`name`, `note`, `tags`, `deferDate`, `dueDate`, `repeat`) |
-| `omnifocus_update_task`       | Change a task by `id`; leave a field out to keep it; `clear` removes a date or the repeat                         |
-| `omnifocus_complete_task`     | Complete the occurrence whose `deferDate` you saw, or with `skip` drop just that occurrence                       |
+| Tool                          | What it does                                                                                                                              |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `omnifocus_list_perspectives` | List custom perspectives and whether their tasks can be worked out here                                                                   |
+| `omnifocus_perspective_tasks` | The tasks a custom perspective shows, by its exact `perspective` name                                                                     |
+| `omnifocus_list_tags`         | List tags with their full paths (`Slot/Morning`) and status                                                                               |
+| `omnifocus_list_projects`     | List projects with their full paths (`Domestic/Housekeeping`) and status                                                                  |
+| `omnifocus_create_task`       | Add a task to a `project`, or to the Inbox without one (`name`, `note`, `tags`, `deferDate`, `dueDate`, `repeat`)                         |
+| `omnifocus_update_task`       | Change a task by `id`; leave a field out to keep it; `project` moves it; `clear` removes a date, the repeat or the project (to the Inbox) |
+| `omnifocus_complete_task`     | Complete the occurrence whose `deferDate` you saw, or with `skip` drop just that occurrence                                               |
 
 ### How it works
 
-The server runs `osascript -l JavaScript`, which hands an OmniJS program to OmniFocus with `evaluateJavascript`. Each program is a TypeScript function in `src/omnifocus-scripts.ts`, sent as source text with its arguments as one JSON literal, and its JSON answer is decoded with an Effect Schema. Calls run one at a time and time out after 30 seconds. Failures come back as tagged errors (`OmniFocusFailed`, `OmniFocusTimedOut`, `OmniFocusOutputInvalid`, `OmniFocusTaskNotFound`, `OmniFocusTagNotFound`, `OmniFocusTagAmbiguous`, `OmniFocusProjectNotFound`, `OmniFocusProjectAmbiguous`, `OmniFocusProjectClosed`, `OmniFocusRepeatInvalid`, `OmniFocusNotRepeating`, `OmniFocusOccurrenceMoved`, `OmniFocusPerspectiveNotFound`, `OmniFocusPerspectiveAmbiguous`, `OmniFocusPerspectiveUnsupported`). See `src/omnifocus.ts`.
+The server runs `osascript -l JavaScript`, which hands an OmniJS program to OmniFocus with `evaluateJavascript`. Each program is a TypeScript function in `src/omnifocus-scripts.ts`, sent as source text with its arguments as one JSON literal, and its JSON answer is decoded with an Effect Schema. Calls run one at a time and time out after 30 seconds. Failures come back as tagged errors (`OmniFocusFailed`, `OmniFocusTimedOut`, `OmniFocusOutputInvalid`, `OmniFocusTaskNotFound`, `OmniFocusTagNotFound`, `OmniFocusTagAmbiguous`, `OmniFocusProjectNotFound`, `OmniFocusProjectAmbiguous`, `OmniFocusProjectClosed`, `OmniFocusTaskIsProject`, `OmniFocusRepeatInvalid`, `OmniFocusNotRepeating`, `OmniFocusOccurrenceMoved`, `OmniFocusPerspectiveNotFound`, `OmniFocusPerspectiveAmbiguous`, `OmniFocusPerspectiveUnsupported`). See `src/omnifocus.ts`.
 
 A perspective's tasks are worked out in `src/perspectives.ts`. One call reads every remaining task, the tags, and each custom perspective's filter rules, and the rules are evaluated the way OmniFocus does: a tag also matches the tags nested under it, and a rule whose tags were all deleted is ignored.
 

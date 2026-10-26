@@ -58,6 +58,8 @@ interface OFTask {
   readonly children: ReadonlyArray<OFTask>
   // For a project's own root task, the project itself.
   readonly containingProject: OFProject | null
+  // Only on a project's own root task, which shares the project's id.
+  readonly project: OFProject | null
   repetitionRule: OFRepetitionRule | null
   addTags(tags: ReadonlyArray<OFTag>): void
   removeTags(tags: ReadonlyArray<OFTag>): void
@@ -105,6 +107,10 @@ declare const flattenedTasks: ReadonlyArray<OFTask>
 declare const flattenedTags: ReadonlyArray<OFTag>
 declare const flattenedProjects: ReadonlyArray<OFProject>
 declare const inbox: { readonly ending: unknown }
+declare const moveTasks: (
+  tasks: ReadonlyArray<OFTask>,
+  position: unknown,
+) => void
 declare const settings: { objectForKey(key: string): unknown }
 
 // Helpers every script gets as its second argument.
@@ -416,6 +422,23 @@ export const updateTask: Script<UpdateTaskParams> = (args, omni) => {
       )
     }
   }
+  // Moving a project's root task would turn the whole project into a task.
+  if (
+    task.project !== null &&
+    (args.project !== undefined || clear.includes('project'))
+  ) {
+    omni.fail(
+      'OmniFocusTaskIsProject',
+      `"${task.name}" is the project "${omni.projectPath(task.project)}" itself, not a task in it, so it can't be moved. Nothing changed.`,
+    )
+  }
+  // null moves the task to the Inbox. A task already in the project, or already in the Inbox, is not moved, so it keeps
+  // its place there.
+  const project = clear.includes('project')
+    ? null
+    : args.project === undefined
+      ? undefined
+      : omni.project(args.project)
   const tags = args.tags === undefined ? undefined : omni.tags(args.tags)
   const deferDate = clear.includes('deferDate')
     ? null
@@ -455,6 +478,14 @@ export const updateTask: Script<UpdateTaskParams> = (args, omni) => {
 
   if (args.name !== undefined) task.name = args.name
   if (args.note !== undefined) task.note = args.note
+  if (project === null) {
+    if (task.containingProject !== null) moveTasks([task], inbox.ending)
+  } else if (
+    project !== undefined &&
+    task.containingProject?.id.primaryKey !== project.id.primaryKey
+  ) {
+    moveTasks([task], project.ending)
+  }
   if (tags !== undefined) {
     task.removeTags(task.tags)
     task.addTags(tags)
