@@ -148,7 +148,7 @@ describe('OmniFocus.evaluate', () => {
       new OmniFocusTimedOut({
         timeoutMs: 20,
         message:
-          'OmniFocus snapshot timed out after 20 ms. It may still have run, so do not retry blindly. A pending macOS Automation permission prompt or an open dialog in OmniFocus is the usual cause.',
+          'OmniFocus snapshot timed out after 20 ms. It may still have run, so do not retry blindly. A pending macOS Automation permission prompt is the usual cause.',
       }),
     )
     expect(cli.killed()).toBe(true)

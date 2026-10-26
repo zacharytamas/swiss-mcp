@@ -132,7 +132,7 @@ const make = Effect.gen(function* () {
             Effect.fail(
               new OmniFocusTimedOut({
                 timeoutMs,
-                message: `OmniFocus ${operation} timed out after ${timeoutMs} ms. It may still have run, so do not retry blindly. A pending macOS Automation permission prompt or an open dialog in OmniFocus is the usual cause.`,
+                message: `OmniFocus ${operation} timed out after ${timeoutMs} ms. It may still have run, so do not retry blindly. A pending macOS Automation permission prompt is the usual cause.`,
               }),
             ),
         }),
