@@ -44,8 +44,40 @@ const tag = (id: string, name: string, parent: FakeTag | null = null) => ({
   status: enumValue('Tag.Status', 'Active'),
 })
 
+const ProjectStatus = {
+  Active: enumValue('Project.Status', 'Active'),
+  OnHold: enumValue('Project.Status', 'OnHold'),
+  Done: enumValue('Project.Status', 'Done'),
+  Dropped: enumValue('Project.Status', 'Dropped'),
+}
+
+interface FakeFolder {
+  name: string
+  parent: FakeFolder | null
+}
+interface FakeProject {
+  id: { primaryKey: string }
+  name: string
+  status: object
+  parentFolder: FakeFolder | null
+  ending: string
+}
+const project = (
+  id: string,
+  name: string,
+  parentFolder: FakeFolder | null = null,
+  status: object = ProjectStatus.Active,
+) => ({
+  id: { primaryKey: id },
+  name,
+  status,
+  parentFolder,
+  ending: `${id}.ending`,
+})
+
 let tasks: Array<FakeTask> = []
 let tags: Array<FakeTag> = []
+let projects: Array<FakeProject> = []
 let ruleCalls: Array<ReadonlyArray<unknown>> = []
 let nextId = 1
 
@@ -83,7 +115,7 @@ class FakeTask {
   plannedDate: Date | null = null
   tags: Array<FakeTag> = []
   children: Array<FakeTask> = []
-  containingProject: { name: string } | null = null
+  containingProject: FakeProject | null = null
   repetitionRule: FakeRule | null = null
   constructor(
     public name: string,
@@ -142,12 +174,16 @@ const globals = () => ({
       AnchorDateKey: Anchor,
     },
   ),
+  Project: { Status: ProjectStatus },
   Perspective: { Custom: { all: [] } },
   get flattenedTasks() {
     return [...tasks]
   },
   get flattenedTags() {
     return [...tags]
+  },
+  get flattenedProjects() {
+    return [...projects]
   },
   inbox: { ending: 'inbox.ending' },
   settings: {
@@ -164,6 +200,7 @@ const local = (y: number, mo: number, d: number, h: number, mi: number) =>
 
 let slot: FakeTag
 let morning: FakeTag
+let housekeeping: FakeProject
 beforeEach(() => {
   tasks = []
   ruleCalls = []
@@ -179,6 +216,9 @@ beforeEach(() => {
     tag('evening', 'Evening', slot),
     tag('evening2', 'Evening', tag('work', 'Work')),
   ]
+  const domestic = { name: 'Domestic', parent: null }
+  housekeeping = project('housekeeping', 'Housekeeping', domestic)
+  projects = [housekeeping]
 })
 
 const strange = `Call "Dad" about Zoë's \\ backslash\nsecond line 🎉`
@@ -542,6 +582,21 @@ describe('read scripts', () => {
       name: 'Morning',
       parentId: 'slot',
     })
+  })
+
+  test("a task's project is the full path of its containing project", () => {
+    existing({
+      containingProject: project('garden', 'Garden', {
+        name: 'Outside',
+        parent: { name: 'Domestic', parent: null },
+      }),
+    })
+    existing({ containingProject: housekeeping })
+    existing()
+
+    expect(
+      evaluate(snapshot, {}).tasks.map((t: { project: unknown }) => t.project),
+    ).toEqual(['Domestic/Outside/Garden', 'Domestic/Housekeeping', null])
   })
 
   test('listTags gives each tag its full path and status', () => {
