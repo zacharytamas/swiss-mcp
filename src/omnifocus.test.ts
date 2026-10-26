@@ -282,6 +282,7 @@ describe('OmniFocus tools over MCP', () => {
       ['omnifocus_list_perspectives', true, false, false],
       ['omnifocus_perspective_tasks', true, false, false],
       ['omnifocus_list_tags', true, false, false],
+      ['omnifocus_list_projects', true, false, false],
       ['omnifocus_create_task', false, false, true],
       ['omnifocus_update_task', false, true, true],
       ['omnifocus_complete_task', false, true, true],
@@ -353,6 +354,26 @@ describe('OmniFocus tools over MCP', () => {
     const { error: tag, message: text } = failure(reply)
     expect(tag).toBe(error)
     expect(text).toContain(message)
+  })
+
+  test('omnifocus_list_projects returns the projects OmniFocus listed', async () => {
+    const projects = [
+      {
+        id: 'p1',
+        name: 'Housekeeping',
+        path: 'Domestic/Housekeeping',
+        status: 'Active',
+      },
+      { id: 'p2', name: 'Taxes', path: 'Taxes', status: 'Dropped' },
+    ]
+
+    const reply = await callTool(
+      'omnifocus_list_projects',
+      {},
+      { reply: JSON.stringify({ projects }) },
+    )
+
+    expect(reply.result.structuredContent).toEqual({ projects })
   })
 
   test('a task name with quotes, a backslash, a newline and emoji reaches OmniFocus intact as JSON', async () => {

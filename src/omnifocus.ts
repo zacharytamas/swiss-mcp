@@ -28,6 +28,7 @@ import {
   PerspectiveInfo,
   PerspectiveList,
   PerspectiveParams,
+  ProjectList,
   ScriptFailure,
   Snapshot,
   TagList,
@@ -40,6 +41,7 @@ import {
   completeTask,
   createTask,
   listPerspectives,
+  listProjects,
   listTags,
   program,
   snapshot,
@@ -212,6 +214,13 @@ export const OmniFocusToolkit = Toolkit.make(
     'reads',
   ),
   omnifocusTool(
+    'omnifocus_list_projects',
+    'List your OmniFocus projects in OmniFocus order, whatever their status, each with its full path (parent folder first, e.g. Domestic/Housekeeping) and status. The OmniFocus task tools take a project by path, or by a name only one project has.',
+    Tool.EmptyParams,
+    ProjectList,
+    'reads',
+  ),
+  omnifocusTool(
     'omnifocus_create_task',
     `Add a task to the OmniFocus Inbox, as Quick Entry does. ${dates} Tags must already exist; they are never created. ${repeats} ${stored}`,
     CreateTaskParams,
@@ -326,6 +335,10 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
       omnifocus_list_tags: () =>
         omnifocus
           .evaluate('list tags', program(listTags, {}), TagList)
+          .pipe(toFailure),
+      omnifocus_list_projects: () =>
+        omnifocus
+          .evaluate('list projects', program(listProjects, {}), ProjectList)
           .pipe(toFailure),
       omnifocus_create_task: (p) =>
         omnifocus

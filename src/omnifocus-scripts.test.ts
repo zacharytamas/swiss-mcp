@@ -3,6 +3,7 @@ import { runInNewContext } from 'node:vm'
 import {
   completeTask,
   createTask,
+  listProjects,
   listTags,
   program,
   snapshot,
@@ -606,5 +607,24 @@ describe('read scripts', () => {
       path: 'Slot/Morning',
       status: 'Active',
     })
+  })
+
+  test('listProjects gives every project its full path and status, in OmniFocus order', () => {
+    projects = [
+      housekeeping,
+      project('taxes', 'Taxes', null, ProjectStatus.Done),
+      project('bikes', 'Bikes', null, ProjectStatus.OnHold),
+    ]
+
+    expect(evaluate(listProjects, {}).projects).toEqual([
+      {
+        id: 'housekeeping',
+        name: 'Housekeeping',
+        path: 'Domestic/Housekeeping',
+        status: 'Active',
+      },
+      { id: 'taxes', name: 'Taxes', path: 'Taxes', status: 'Done' },
+      { id: 'bikes', name: 'Bikes', path: 'Bikes', status: 'OnHold' },
+    ])
   })
 })
