@@ -15,19 +15,11 @@ import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import {
   type OmniFocusError,
   OmniFocusFailed,
-  OmniFocusNotRepeating,
-  OmniFocusOccurrenceMoved,
   OmniFocusOutputInvalid,
   OmniFocusPerspectiveAmbiguous,
   OmniFocusPerspectiveNotFound,
   OmniFocusPerspectiveUnsupported,
-  OmniFocusRepeatInvalid,
-  type OmniFocusScriptError,
-  OmniFocusTagAmbiguous,
-  OmniFocusTagNotFound,
-  OmniFocusTaskNotFound,
   OmniFocusTimedOut,
-  OmniFocusUpdateConflict,
 } from './omnifocus-errors.ts'
 import {
   CompleteResult,
@@ -62,19 +54,6 @@ export const JXA =
   "function run(argv) { return Application('OmniFocus').evaluateJavascript(argv[0]) }"
 
 type JsonCodec = Schema.Codec<unknown, unknown, never, never>
-
-const refusals: Record<
-  ScriptFailure['error'],
-  new (fields: { readonly message: string }) => OmniFocusScriptError
-> = {
-  OmniFocusTaskNotFound,
-  OmniFocusTagNotFound,
-  OmniFocusTagAmbiguous,
-  OmniFocusRepeatInvalid,
-  OmniFocusNotRepeating,
-  OmniFocusUpdateConflict,
-  OmniFocusOccurrenceMoved,
-}
 
 const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -157,11 +136,7 @@ const make = Effect.gen(function* () {
       Schema.fromJsonString(Schema.Unknown),
     )(result.stdout).pipe(Effect.mapError(invalid))
     const refusal = Schema.decodeUnknownOption(ScriptFailure)(json)
-    if (Option.isSome(refusal)) {
-      return yield* new refusals[refusal.value.error]({
-        message: refusal.value.message,
-      })
-    }
+    if (Option.isSome(refusal)) return yield* refusal.value
     return yield* Schema.decodeUnknownEffect(output)(json).pipe(
       Effect.mapError(invalid),
     )

@@ -266,7 +266,7 @@ describe('createTask', () => {
   ])('refuses %j before creating anything', (fields, error, detail) => {
     const reply = evaluate(createTask, { name: 'x', ...fields })
 
-    expect(reply.error).toBe(error)
+    expect(reply._tag).toBe(error)
     expect(reply.message).toContain(detail)
     expect(tasks).toEqual([])
   })
@@ -309,7 +309,7 @@ describe('updateTask', () => {
       clear: ['deferDate'],
     })
 
-    expect(reply.error).toBe('OmniFocusUpdateConflict')
+    expect(reply._tag).toBe('OmniFocusUpdateConflict')
     expect(task.deferDate).toEqual(local(2026, 10, 27, 6, 0))
   })
 
@@ -367,7 +367,7 @@ describe('updateTask', () => {
       repeat: { schedule: 'regularly' },
     })
 
-    expect(reply.error).toBe('OmniFocusRepeatInvalid')
+    expect(reply._tag).toBe('OmniFocusRepeatInvalid')
     expect(task.name).toBe('Existing')
   })
 
@@ -380,12 +380,12 @@ describe('updateTask', () => {
       tags: ['Home', 'Nope'],
     })
 
-    expect(reply.error).toBe('OmniFocusTagNotFound')
+    expect(reply._tag).toBe('OmniFocusTagNotFound')
     expect([task.name, task.tags]).toEqual(['Existing', [morning]])
   })
 
   test('an unknown id is OmniFocusTaskNotFound', () => {
-    expect(evaluate(updateTask, { id: 'gone', name: 'x' }).error).toBe(
+    expect(evaluate(updateTask, { id: 'gone', name: 'x' })._tag).toBe(
       'OmniFocusTaskNotFound',
     )
   })
@@ -437,7 +437,7 @@ describe('completeTask', () => {
     })
 
     expect(reply).toEqual({
-      error: 'OmniFocusOccurrenceMoved',
+      _tag: 'OmniFocusOccurrenceMoved',
       message:
         '"Existing" is now deferred to 2026-10-28 06:00, not 2026-10-27 06:00, so the occurrence you saw was probably already completed. Nothing changed; read the task again before completing it.',
     })
@@ -451,7 +451,7 @@ describe('completeTask', () => {
       evaluate(completeTask, {
         id: task.id.primaryKey,
         deferDate: '2026-10-27 06:00',
-      }).error,
+      })._tag,
     ).toBe('OmniFocusOccurrenceMoved')
     expect(
       evaluate(completeTask, { id: task.id.primaryKey, deferDate: null })
@@ -508,7 +508,7 @@ describe('completeTask', () => {
       skip: true,
     })
 
-    expect(reply.error).toBe('OmniFocusNotRepeating')
+    expect(reply._tag).toBe('OmniFocusNotRepeating')
     expect(task.taskStatus).toBe(Status.Available)
   })
 })

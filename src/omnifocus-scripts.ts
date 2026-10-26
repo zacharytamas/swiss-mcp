@@ -94,8 +94,8 @@ const lib = () => {
   class Refusal {
     constructor(readonly failure: ScriptFailure) {}
   }
-  const fail = (error: ScriptFailure['error'], message: string): never => {
-    throw new Refusal({ error, message })
+  const fail = (_tag: ScriptFailure['_tag'], message: string): never => {
+    throw new Refusal({ _tag, message })
   }
 
   const pad = (n: number) => String(n).padStart(2, '0')

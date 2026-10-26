@@ -432,19 +432,19 @@ describe('OmniFocus tools over MCP', () => {
   })
 
   test("a script's refusal is a tool error with its tag and message", async () => {
-    const refusal = {
-      error: 'OmniFocusOccurrenceMoved',
-      message:
-        '"Stretch" is now deferred to 2026-10-28 06:00, not 2026-10-27 06:00.',
-    }
+    const message =
+      '"Stretch" is now deferred to 2026-10-28 06:00, not 2026-10-27 06:00.'
 
     const reply = await callTool(
       'omnifocus_complete_task',
       { id: 't1', deferDate: '2026-10-27 06:00' },
-      { reply: JSON.stringify(refusal) },
+      { reply: JSON.stringify({ _tag: 'OmniFocusOccurrenceMoved', message }) },
     )
 
-    expect(failure(reply)).toEqual(refusal)
+    expect(failure(reply)).toEqual({
+      error: 'OmniFocusOccurrenceMoved',
+      message,
+    })
     expect((await sent()).args).toEqual({
       id: 't1',
       deferDate: '2026-10-27 06:00',

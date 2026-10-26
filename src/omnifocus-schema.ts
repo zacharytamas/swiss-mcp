@@ -1,4 +1,13 @@
 import { Option, Predicate, Schema, SchemaGetter } from 'effect'
+import {
+  OmniFocusNotRepeating,
+  OmniFocusOccurrenceMoved,
+  OmniFocusRepeatInvalid,
+  OmniFocusTagAmbiguous,
+  OmniFocusTagNotFound,
+  OmniFocusTaskNotFound,
+  OmniFocusUpdateConflict,
+} from './omnifocus-errors.ts'
 
 // Dates are local wall-clock time on this Mac, to the minute. The OmniJS scripts read and write them by their local
 // components, so nothing on this side does time-zone math.
@@ -132,20 +141,18 @@ export const CompleteResult = Schema.Struct({
   }),
 })
 
-// What an OmniJS script answers instead of its result when it refuses to act.
-export const ScriptFailure = Schema.Struct({
-  error: Schema.Literals([
-    'OmniFocusTaskNotFound',
-    'OmniFocusTagNotFound',
-    'OmniFocusTagAmbiguous',
-    'OmniFocusRepeatInvalid',
-    'OmniFocusNotRepeating',
-    'OmniFocusUpdateConflict',
-    'OmniFocusOccurrenceMoved',
-  ]),
-  message: Schema.String,
-})
-export type ScriptFailure = typeof ScriptFailure.Type
+// What an OmniJS script answers instead of its result when it refuses to act: one of these errors, encoded as
+// { _tag, message }.
+export const ScriptFailure = Schema.Union([
+  OmniFocusTaskNotFound,
+  OmniFocusTagNotFound,
+  OmniFocusTagAmbiguous,
+  OmniFocusRepeatInvalid,
+  OmniFocusNotRepeating,
+  OmniFocusUpdateConflict,
+  OmniFocusOccurrenceMoved,
+])
+export type ScriptFailure = typeof ScriptFailure.Encoded
 
 const NonEmpty = Schema.String.check(Schema.isNonEmpty())
 
