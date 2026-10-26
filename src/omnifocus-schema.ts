@@ -136,6 +136,17 @@ export const TagList = Schema.Struct({
   ),
 })
 
+export const ProjectList = Schema.Struct({
+  projects: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      path: Schema.String,
+      status: Schema.Literals(['Active', 'OnHold', 'Done', 'Dropped']),
+    }),
+  ),
+})
+
 export const TaskResult = Schema.Struct({ task: Task })
 
 export const CompleteResult = Schema.Struct({

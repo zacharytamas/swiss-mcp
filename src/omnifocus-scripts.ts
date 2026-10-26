@@ -356,6 +356,15 @@ export const listTags: Script<NoArgs> = (_, omni) => ({
   })),
 })
 
+export const listProjects: Script<NoArgs> = (_, omni) => ({
+  projects: flattenedProjects.map((p) => ({
+    id: p.id.primaryKey,
+    name: p.name,
+    path: omni.projectPath(p),
+    status: omni.enumName(p.status),
+  })),
+})
+
 // Into the Inbox, as Quick Entry does. Everything that can be refused is checked before the task exists.
 export const createTask: Script<CreateTaskParams> = (args, omni) => {
   const tags = omni.tags(args.tags ?? [])
