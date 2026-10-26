@@ -244,12 +244,13 @@ const PERSPECTIVES = [
   perspective('p4', 'Twice', [{ actionAvailability: 'available' }]),
   perspective('p5', 'Twice', [{ actionAvailability: 'remaining' }]),
 ]
+const TAG_TREE = [
+  { id: 'slot', name: 'Slot', parentId: null },
+  { id: 'morning', name: 'Morning', parentId: 'slot' },
+  { id: 'home', name: 'Home', parentId: null },
+]
 const SNAPSHOT = JSON.stringify({
-  tags: [
-    { id: 'slot', name: 'Slot', parentId: null },
-    { id: 'morning', name: 'Morning', parentId: 'slot' },
-    { id: 'home', name: 'Home', parentId: null },
-  ],
+  tags: TAG_TREE,
   tasks: [
     { ...MORNING_TASK, tagIds: ['morning'] },
     ...HOME_TASKS.map((t) => ({ ...t, tagIds: ['home'] })),
@@ -291,7 +292,7 @@ describe('OmniFocus tools over MCP', () => {
     const reply = await callTool(
       'omnifocus_list_perspectives',
       {},
-      { reply: JSON.stringify({ perspectives: PERSPECTIVES }) },
+      { reply: JSON.stringify({ tags: TAG_TREE, perspectives: PERSPECTIVES }) },
     )
 
     expect(reply.result.structuredContent).toEqual({

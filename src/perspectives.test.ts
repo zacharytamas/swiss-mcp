@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { Result } from 'effect'
 import {
-  matchingTasks,
-  parsePerspective,
+  perspectiveFilter,
   type RuleTag,
   type RuleTask,
 } from './perspectives.ts'
@@ -46,15 +45,13 @@ const TASKS = [
 
 // The names of TASKS the perspective shows; throws if it is unsupported.
 const shown = (rules: unknown, aggregation: unknown = 'all') =>
-  matchingTasks(
-    Result.getOrThrow(parsePerspective(rules, aggregation)),
-    TAGS,
-    TASKS,
+  TASKS.filter(
+    Result.getOrThrow(perspectiveFilter(rules, aggregation, TAGS)),
   ).map((t) => t.name)
 
 const reason = (rules: unknown, aggregation: unknown = 'all') => {
-  const parsed = parsePerspective(rules, aggregation)
-  return Result.isFailure(parsed) ? parsed.failure : 'supported'
+  const filter = perspectiveFilter(rules, aggregation, TAGS)
+  return Result.isFailure(filter) ? filter.failure : 'supported'
 }
 
 const available = { actionAvailability: 'available' }
@@ -240,18 +237,6 @@ describe('aggregation', () => {
     ).toEqual([])
   })
 
-  test('an empty any matches every task (assumed; not measured on OmniFocus)', () => {
-    expect(
-      shown([
-        remaining,
-        {
-          aggregateType: 'any',
-          aggregateRules: [{ disabledRule: { actionIsLeaf: true } }],
-        },
-      ]),
-    ).toEqual(OPEN)
-  })
-
   test('a top-level any of availability rules only is supported', () => {
     expect(shown([available, remaining], 'any')).toEqual(OPEN)
   })
@@ -343,6 +328,25 @@ describe('unsupported perspectives', () => {
     ],
   ])('%s needs completed or dropped tasks', (_, rules, aggregation) => {
     expect(reason(rules, aggregation)).toBe(noAvailability)
+  })
+
+  const emptyAny =
+    'it has an any group with no rules left to apply, and what OmniFocus shows for that has not been measured'
+
+  test.each([
+    ['only disabled rules', [{ disabledRule: { actionIsLeaf: true } }]],
+    ['only rules on deleted tags', [{ actionHasAnyOfTags: ['gone'] }]],
+  ])('an any group with %s is not supported', (_, aggregateRules) => {
+    expect(reason([remaining, { aggregateType: 'any', aggregateRules }])).toBe(
+      emptyAny,
+    )
+    expect(reason(aggregateRules, 'any')).toBe(emptyAny)
+  })
+
+  test('a tag rule on deleted tags does not stop a top-level any of availability rules', () => {
+    expect(shown([available, { actionHasAnyOfTags: ['gone'] }], 'any')).toEqual(
+      shown([available]),
+    )
   })
 
   test('availability inside a nested all is enough', () => {

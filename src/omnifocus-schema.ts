@@ -85,19 +85,22 @@ const RawPerspective = Schema.Struct({
   aggregation: Schema.Unknown,
 })
 
+const TagTree = Schema.Array(
+  Schema.Struct({
+    id: Schema.String,
+    name: Schema.String,
+    parentId: Schema.NullOr(Schema.String),
+  }),
+)
+
 export const PerspectiveList = Schema.Struct({
+  tags: TagTree,
   perspectives: Schema.Array(RawPerspective),
 })
 
 // Open tasks only (neither Completed nor Dropped), in database order, with what the perspective rules look at.
 export const Snapshot = Schema.Struct({
-  tags: Schema.Array(
-    Schema.Struct({
-      id: Schema.String,
-      name: Schema.String,
-      parentId: Schema.NullOr(Schema.String),
-    }),
-  ),
+  tags: TagTree,
   tasks: Schema.Array(
     Schema.Struct({
       ...Task.fields,

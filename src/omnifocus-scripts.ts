@@ -209,6 +209,13 @@ const lib = () => {
     })
   }
 
+  // What the perspective rules need to know about tags.
+  const tagTree = () =>
+    flattenedTags.map((t) => ({
+      id: t.id.primaryKey,
+      name: t.name,
+      parentId: t.parent?.id.primaryKey ?? null,
+    }))
   const perspectives = () =>
     Perspective.Custom.all.map((p) => ({
       id: p.identifier,
@@ -230,6 +237,7 @@ const lib = () => {
     task,
     find,
     tags,
+    tagTree,
     perspectives,
   }
 }
@@ -253,17 +261,14 @@ export const program = <A>(script: Script<A>, args: A) =>
   `(${run.toString()})(${lib.toString()}, ${script.toString()},\n${JSON.stringify(args)}\n)`
 
 export const listPerspectives: Script<NoArgs> = (_, omni) => ({
+  tags: omni.tagTree(),
   perspectives: omni.perspectives(),
 })
 
 export const snapshot: Script<NoArgs> = (_, omni) => {
   const { Completed, Dropped } = Task.Status
   return {
-    tags: flattenedTags.map((t) => ({
-      id: t.id.primaryKey,
-      name: t.name,
-      parentId: t.parent?.id.primaryKey ?? null,
-    })),
+    tags: omni.tagTree(),
     tasks: flattenedTasks
       .filter((t) => t.taskStatus !== Completed && t.taskStatus !== Dropped)
       .map((t) => ({

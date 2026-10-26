@@ -5,9 +5,9 @@ import {
   TopLevelAggregation,
 } from './perspectives-schema.ts'
 
-export type Aggregation = 'all' | 'any' | 'none'
+type Aggregation = 'all' | 'any' | 'none'
 
-export type Rule =
+type Rule =
   | {
       readonly _tag: 'Availability'
       readonly availability: 'available' | 'remaining'
@@ -21,9 +21,6 @@ export type Rule =
       readonly aggregation: Aggregation
       readonly rules: ReadonlyArray<Rule>
     }
-  | { readonly _tag: 'Disabled' }
-
-export type Filter = Extract<Rule, { readonly _tag: 'Aggregate' }>
 
 // What the rules look at. `status` is OmniFocus's taskStatus name.
 export interface RuleTask {
@@ -65,7 +62,8 @@ const unsupported = (raw: unknown): string => {
     : `rule ${key} is not supported`
 }
 
-const parseRule = (raw: unknown): Result.Result<Rule, string> => {
+// A disabled rule is undefined: OmniFocus ignores it, whatever it holds.
+const parseRule = (raw: unknown): Result.Result<Rule | undefined, string> => {
   const decoded = decodeRule(raw)
   if (Result.isFailure(decoded)) return Result.fail(unsupported(raw))
   const r = decoded.success
@@ -103,7 +101,7 @@ const parseRule = (raw: unknown): Result.Result<Rule, string> => {
       rules,
     }))
   }
-  return Result.succeed({ _tag: 'Disabled' })
+  return Result.succeed(undefined)
 }
 
 const parseRules = (
@@ -113,36 +111,112 @@ const parseRules = (
   for (const raw of raws) {
     const rule = parseRule(raw)
     if (Result.isFailure(rule)) return Result.fail(rule.failure)
-    rules.push(rule.success)
+    if (rule.success !== undefined) rules.push(rule.success)
   }
   return Result.succeed(rules)
 }
 
-// Whether every task the rule matches is remaining (neither completed nor dropped). Only then can it be evaluated
-// over a snapshot of open tasks: otherwise OmniFocus would also show completed or dropped ones.
-const onlyRemaining = (rule: Rule): boolean => {
-  switch (rule._tag) {
-    case 'Availability':
-      return true
-    case 'Aggregate': {
-      const enabled = rule.rules.filter((r) => r._tag !== 'Disabled')
-      if (rule.aggregation === 'all') return enabled.some(onlyRemaining)
-      if (rule.aggregation === 'any') {
-        return enabled.length > 0 && enabled.every(onlyRemaining)
-      }
-      return false
-    }
-    default:
-      return false
-  }
+const available = new Set(['Available', 'Next', 'DueSoon', 'Overdue'])
+
+type Test = (task: RuleTask, tagged: ReadonlySet<string>) => boolean
+interface Compiled {
+  readonly test: Test
+  // Every task the rule matches is remaining (neither completed nor dropped), so a snapshot of open tasks is enough.
+  readonly remaining: boolean
 }
 
-// A perspective's archivedFilterRules and archivedTopLevelFilterAggregation as OmniFocus reports them, or why its
-// tasks can't be computed from open tasks.
-export const parsePerspective = (
+// A tag rule matches a task tagged with that tag or any tag nested under it. Tag ids that no longer exist are dropped,
+// and a tag rule left with none is ignored (undefined), as OmniFocus does.
+const compiler = (tags: ReadonlyArray<RuleTag>) => {
+  const exists = new Set(tags.map((t) => t.id))
+
+  const aggregate = (
+    aggregation: Aggregation,
+    parts: ReadonlyArray<Compiled>,
+  ): Result.Result<Compiled, string> => {
+    switch (aggregation) {
+      // Measured: an all with no rules left matches every task.
+      case 'all':
+        return Result.succeed({
+          test: (task, tagged) => parts.every((p) => p.test(task, tagged)),
+          remaining: parts.some((p) => p.remaining),
+        })
+      case 'any':
+        return parts.length === 0
+          ? Result.fail(
+              'it has an any group with no rules left to apply, and what OmniFocus shows for that has not been measured',
+            )
+          : Result.succeed({
+              test: (task, tagged) => parts.some((p) => p.test(task, tagged)),
+              remaining: parts.every((p) => p.remaining),
+            })
+      case 'none': {
+        // Measured: a none with no rules left matches no task.
+        const test: Test =
+          parts.length === 0
+            ? () => false
+            : (task, tagged) => !parts.some((p) => p.test(task, tagged))
+        return Result.succeed({ test, remaining: false })
+      }
+    }
+  }
+
+  const compile = (rule: Rule): Result.Result<Compiled | undefined, string> => {
+    switch (rule._tag) {
+      case 'Availability':
+        return Result.succeed({
+          test:
+            rule.availability === 'available'
+              ? (task) => available.has(task.status)
+              : (task) =>
+                  task.status !== 'Completed' && task.status !== 'Dropped',
+          remaining: true,
+        })
+      case 'HasAnyOfTags':
+      case 'HasAllOfTags': {
+        const ids = rule.tagIds.filter((id) => exists.has(id))
+        if (ids.length === 0) return Result.succeed(undefined)
+        return Result.succeed({
+          test:
+            rule._tag === 'HasAnyOfTags'
+              ? (_, tagged) => ids.some((id) => tagged.has(id))
+              : (_, tagged) => ids.every((id) => tagged.has(id)),
+          remaining: false,
+        })
+      }
+      case 'IsLeaf':
+        return Result.succeed({
+          test: (task) => task.leaf === rule.leaf,
+          remaining: false,
+        })
+      case 'HasDeferDate':
+        return Result.succeed({
+          test: (task) =>
+            (task.effectiveDeferDate !== null) === rule.hasDeferDate,
+          remaining: false,
+        })
+      case 'Aggregate': {
+        const parts: Array<Compiled> = []
+        for (const r of rule.rules) {
+          const part = compile(r)
+          if (Result.isFailure(part)) return Result.fail(part.failure)
+          if (part.success !== undefined) parts.push(part.success)
+        }
+        return aggregate(rule.aggregation, parts)
+      }
+    }
+  }
+
+  return compile
+}
+
+// Which open tasks a perspective shows, from its archivedFilterRules and archivedTopLevelFilterAggregation as
+// OmniFocus reports them, or why that can't be worked out from open tasks.
+export const perspectiveFilter = (
   rules: unknown,
   aggregation: unknown,
-): Result.Result<Filter, string> => {
+  tags: ReadonlyArray<RuleTag>,
+): Result.Result<(task: RuleTask) => boolean, string> => {
   const top = Schema.decodeUnknownResult(TopLevelAggregation)(aggregation)
   if (Result.isFailure(top)) {
     return Result.fail(
@@ -153,32 +227,21 @@ export const parsePerspective = (
   if (Result.isFailure(raws)) {
     return Result.fail('its rules are not a list')
   }
-  return Result.flatMap(
-    parseRules(raws.success),
-    (parsed): Result.Result<Filter, string> => {
-      const filter = {
-        _tag: 'Aggregate' as const,
-        aggregation: top.success ?? 'all',
-        rules: parsed,
-      }
-      return onlyRemaining(filter)
-        ? Result.succeed(filter)
-        : Result.fail(
-            'no enabled availability rule limits it to remaining actions, so OmniFocus would also show completed or dropped ones',
-          )
-    },
+  const compiled = Result.flatMap(parseRules(raws.success), (parsed) =>
+    compiler(tags)({
+      _tag: 'Aggregate',
+      aggregation: top.success ?? 'all',
+      rules: parsed,
+    }),
   )
-}
+  if (Result.isFailure(compiled)) return Result.fail(compiled.failure)
+  const filter = compiled.success
+  if (filter === undefined || !filter.remaining) {
+    return Result.fail(
+      'no enabled availability rule limits it to remaining actions, so OmniFocus would also show completed or dropped ones',
+    )
+  }
 
-const available = new Set(['Available', 'Next', 'DueSoon', 'Overdue'])
-
-// The tasks the filter matches, in the order given. A tag rule matches a task tagged with that tag or any tag nested
-// under it. Tag ids that no longer exist are dropped, and a rule left with none is ignored, as OmniFocus does.
-export const matchingTasks = <T extends RuleTask>(
-  filter: Filter,
-  tags: ReadonlyArray<RuleTag>,
-  tasks: ReadonlyArray<T>,
-): ReadonlyArray<T> => {
   const parents = new Map(tags.map((t) => [t.id, t.parentId]))
   const lineages = new Map<string, ReadonlyArray<string>>()
   const lineage = (id: string) => {
@@ -192,48 +255,7 @@ export const matchingTasks = <T extends RuleTask>(
     lineages.set(id, ids)
     return ids
   }
-
-  type Test = (task: T, tagged: ReadonlySet<string>) => boolean | null
-  const compile = (rule: Rule): Test => {
-    switch (rule._tag) {
-      case 'Availability':
-        return rule.availability === 'available'
-          ? (task) => available.has(task.status)
-          : (task) => task.status !== 'Completed' && task.status !== 'Dropped'
-      case 'HasAnyOfTags':
-      case 'HasAllOfTags': {
-        const ids = rule.tagIds.filter((id) => parents.has(id))
-        if (ids.length === 0) return () => null
-        return rule._tag === 'HasAnyOfTags'
-          ? (_, tagged) => ids.some((id) => tagged.has(id))
-          : (_, tagged) => ids.every((id) => tagged.has(id))
-      }
-      case 'IsLeaf':
-        return (task) => task.leaf === rule.leaf
-      case 'HasDeferDate':
-        return (task) =>
-          (task.effectiveDeferDate !== null) === rule.hasDeferDate
-      case 'Aggregate': {
-        const tests = rule.rules.map(compile)
-        return (task, tagged) => {
-          const results = tests
-            .map((test) => test(task, tagged))
-            .filter((r) => r !== null)
-          // Measured: once ignored rules are left out, an empty all matches every task and an empty none matches
-          // none. An empty any is assumed to match every task.
-          if (results.length === 0) return rule.aggregation !== 'none'
-          if (rule.aggregation === 'all') return results.every(Boolean)
-          if (rule.aggregation === 'any') return results.some(Boolean)
-          return !results.some(Boolean)
-        }
-      }
-      case 'Disabled':
-        return () => null
-    }
-  }
-
-  const test = compile(filter)
-  return tasks.filter(
-    (task) => test(task, new Set(task.tagIds.flatMap(lineage))) === true,
+  return Result.succeed((task) =>
+    filter.test(task, new Set(task.tagIds.flatMap(lineage))),
   )
 }
