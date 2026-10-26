@@ -1,6 +1,7 @@
 // Calls the OmniFocus tools through the real MCP server and checks what OmniFocus reports back.
 // Default: read-only (list perspectives and tags, and each supported perspective's tasks).
 // --write: create, update, complete and skip a throwaway repeating task, then delete every task with its exact name.
+// A failed write step stops the ones after it, so nothing acts on a task the server returned wrongly.
 // --parity: compare each supported perspective's tasks with what OmniFocus renders for it in a temporary tab.
 type Item = Record<string, any>
 
@@ -41,17 +42,24 @@ const report = (label: string, why: string | undefined, detail?: unknown) => {
     console.log(`  ${JSON.stringify(detail).slice(0, 400)}`)
   }
 }
+// The content only if it passed.
 const check = async (
   tool: string,
   args: object,
   expect: (content: Item) => string | undefined,
 ) => {
   const { ms, content, problem } = await call(tool, args)
-  report(
-    `${tool} (${ms} ms)`,
-    problem ?? (content ? expect(content) : 'no result'),
-    content,
-  )
+  const why = problem ?? (content ? expect(content) : 'no result')
+  report(`${tool} (${ms} ms)`, why, content)
+  return why ? undefined : content
+}
+const step = async (...args: Parameters<typeof check>) => {
+  const content = await check(...args)
+  if (!content) {
+    throw new Error(
+      `${args[0]} failed, so the write steps after it were skipped`,
+    )
+  }
   return content
 }
 
@@ -118,7 +126,7 @@ if (write) {
   const later = (a: unknown, b: unknown) =>
     typeof a === 'string' && typeof b === 'string' && a > b
   try {
-    const created = await check(
+    const created = await step(
       'omnifocus_create_task',
       {
         name,
@@ -139,11 +147,10 @@ if (write) {
               ? `repeat is ${JSON.stringify(task.repeat)}`
               : undefined,
     )
-    const id = created?.task?.id
-    const seen = created?.task?.deferDate
-    if (!id) throw new Error('nothing to continue with')
+    const id = created.task.id
+    const seen = created.task.deferDate
 
-    await check(
+    await step(
       'omnifocus_update_task',
       { id, note: 'updated by verify-omnifocus', repeat: { catchUp: true } },
       ({ task }) =>
@@ -162,7 +169,7 @@ if (write) {
               : undefined,
     )
 
-    const completed = await check(
+    const completed = await step(
       'omnifocus_complete_task',
       { id, deferDate: seen },
       ({ completed, next }) =>
@@ -174,18 +181,24 @@ if (write) {
               ? `next is ${JSON.stringify(next)}`
               : undefined,
     )
-    const nextSeen = completed?.next?.deferDate
+    const nextSeen = completed.next.deferDate
 
     const stale = await call('omnifocus_complete_task', { id, deferDate: seen })
-    report(
-      `omnifocus_complete_task again with the stale deferDate (${stale.ms} ms)`,
+    const staleWhy =
       stale.error?.error === 'OmniFocusOccurrenceMoved'
         ? undefined
-        : `expected OmniFocusOccurrenceMoved, got ${JSON.stringify(stale.error ?? stale.content)}`,
+        : `expected OmniFocusOccurrenceMoved, got ${JSON.stringify(stale.error ?? stale.content)}`
+    report(
+      `omnifocus_complete_task again with the stale deferDate (${stale.ms} ms)`,
+      staleWhy,
       stale.error,
     )
+    if (staleWhy)
+      throw new Error(
+        'the stale complete was not refused, so the write steps after it were skipped',
+      )
 
-    await check(
+    await step(
       'omnifocus_complete_task',
       { id, deferDate: nextSeen, skip: true },
       ({ next }) =>
@@ -194,7 +207,7 @@ if (write) {
           : undefined,
     )
 
-    await check(
+    await step(
       'omnifocus_update_task',
       { id, clear: ['repeat', 'deferDate'] },
       ({ task }) =>
