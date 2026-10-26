@@ -140,6 +140,7 @@ export const ScriptFailure = Schema.Struct({
     'OmniFocusTagAmbiguous',
     'OmniFocusRepeatInvalid',
     'OmniFocusNotRepeating',
+    'OmniFocusUpdateConflict',
     'OmniFocusOccurrenceMoved',
   ]),
   message: Schema.String,
@@ -188,6 +189,14 @@ const RepeatOptions = {
 const Rule = NonEmpty.annotate({
   description:
     'An RFC 5545 RRULE body without the "RRULE:" prefix, e.g. FREQ=DAILY.',
+})
+
+// Clearing is asked for by name, never by null: a strict-mode client sends null for every field it leaves out.
+export const Clear = Schema.Array(
+  Schema.Literals(['deferDate', 'dueDate', 'repeat']),
+).annotate({
+  description:
+    'Fields to remove from the task. A field named here must not also be given a value.',
 })
 
 export const RepeatInput = Schema.Struct({ rule: Rule, ...RepeatOptions })

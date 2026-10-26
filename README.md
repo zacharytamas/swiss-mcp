@@ -57,7 +57,7 @@ Measured on Due 26.4.4:
 | `omnifocus_perspective_tasks` | The tasks a custom perspective shows, by its exact `perspective` name                       |
 | `omnifocus_list_tags`         | List tags with their full paths (`Slot/Morning`) and status                                 |
 | `omnifocus_create_task`       | Add a task to the Inbox (`name`, `note`, `tags`, `deferDate`, `dueDate`, `repeat`)          |
-| `omnifocus_update_task`       | Change a task by `id`; leave a field out to keep it, `null` clears a date or the repeat     |
+| `omnifocus_update_task`       | Change a task by `id`; leave a field out to keep it; `clear` removes a date or the repeat   |
 | `omnifocus_complete_task`     | Complete the occurrence whose `deferDate` you saw, or with `skip` drop just that occurrence |
 
 ### How it works

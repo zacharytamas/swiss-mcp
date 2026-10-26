@@ -376,18 +376,30 @@ describe('OmniFocus tools over MCP', () => {
     expect(reply.result.structuredContent).toEqual({ task: created })
   })
 
-  test('omnifocus_update_task sends null for what to clear and leaves out what to keep', async () => {
+  test('omnifocus_update_task sends what to clear by name and leaves out what to keep', async () => {
     await callTool(
       'omnifocus_update_task',
-      { id: 't1', deferDate: null, repeat: { catchUp: true } },
+      { id: 't1', clear: ['deferDate'], repeat: { catchUp: true } },
       { reply: JSON.stringify({ task: MORNING_TASK }) },
     )
 
     expect((await sent()).args).toEqual({
       id: 't1',
-      deferDate: null,
+      clear: ['deferDate'],
       repeat: { catchUp: true },
     })
+  })
+
+  test('a strict-mode client sending null for a date it left out is refused before OmniFocus runs', async () => {
+    const reply = await callTool(
+      'omnifocus_update_task',
+      { id: 't1', note: 'kept', deferDate: null },
+      { reply: JSON.stringify({ task: MORNING_TASK }) },
+    )
+
+    expect(reply.result.isError).toBe(true)
+    expect(reply.result.content[0].text).toContain('deferDate')
+    expect(await Bun.file(join(dir, 'source.js')).exists()).toBe(false)
   })
 
   test("a script's refusal is a tool error with its tag and message", async () => {

@@ -276,7 +276,7 @@ const existing = (fields: Partial<FakeTask> = {}) =>
   Object.assign(new FakeTask('Existing'), fields)
 
 describe('updateTask', () => {
-  test('leaves out what is omitted and clears what is null', () => {
+  test('leaves out what is omitted and removes what is named in clear', () => {
     const task = existing({
       note: 'keep',
       deferDate: local(2026, 10, 27, 6, 0),
@@ -287,8 +287,7 @@ describe('updateTask', () => {
 
     const reply = evaluate(updateTask, {
       id: task.id.primaryKey,
-      deferDate: null,
-      repeat: null,
+      clear: ['deferDate', 'repeat'],
     })
 
     expect(reply.task).toMatchObject({
@@ -299,6 +298,19 @@ describe('updateTask', () => {
       tags: ['Slot/Morning'],
       repeat: null,
     })
+  })
+
+  test('refuses a field that is both given and cleared, and changes nothing', () => {
+    const task = existing({ deferDate: local(2026, 10, 27, 6, 0) })
+
+    const reply = evaluate(updateTask, {
+      id: task.id.primaryKey,
+      deferDate: '2026-10-30',
+      clear: ['deferDate'],
+    })
+
+    expect(reply.error).toBe('OmniFocusUpdateConflict')
+    expect(task.deferDate).toEqual(local(2026, 10, 27, 6, 0))
   })
 
   test('replaces the tags with the given ones, in the given order', () => {
