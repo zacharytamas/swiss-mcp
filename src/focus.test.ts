@@ -12,7 +12,11 @@ const UNLOCKED = `[ NULL ]  ASN:0x0-0x6c0fc09: (in front)
 `
 const LOCKED = UNLOCKED.replace('"com.t3tools.t3code"', '[ NULL ] ')
 
-type Reply = { readonly stdout: string; readonly code: number }
+type Reply = {
+  readonly stdout: string
+  readonly code: number
+  readonly hang?: boolean
+}
 
 const bytes = (value: string) => Stream.succeed(new TextEncoder().encode(value))
 
@@ -31,7 +35,9 @@ const fakeSpawner = (reply: (line: string) => Reply | undefined) => {
         if (r === undefined) return yield* Effect.die(new Error('ENOENT'))
         return ChildProcessSpawner.makeHandle({
           pid: ChildProcessSpawner.ProcessId(1),
-          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(r.code)),
+          exitCode: r.hang
+            ? Effect.never
+            : Effect.succeed(ChildProcessSpawner.ExitCode(r.code)),
           isRunning: Effect.succeed(false),
           kill: () => Effect.void,
           stdin: Sink.drain,
@@ -103,6 +109,12 @@ describe('Focus.frontmost', () => {
     for (const cli of cases) {
       expect(await run(cli.layer, frontmost)).toEqual(Option.none())
     }
+  })
+
+  test('gives up on an lsappinfo that never exits', async () => {
+    const cli = lsappinfo({ stdout: ASN, code: 0, hang: true }, undefined)
+
+    expect(await run(cli.layer, frontmost)).toEqual(Option.none())
   })
 })
 
