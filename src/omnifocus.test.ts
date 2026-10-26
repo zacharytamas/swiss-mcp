@@ -390,16 +390,45 @@ describe('OmniFocus tools over MCP', () => {
     })
   })
 
-  test('a strict-mode client sending null for a date it left out is refused before OmniFocus runs', async () => {
+  test('null, which the published schema allows for every optional field, is left out rather than cleared', async () => {
     const reply = await callTool(
       'omnifocus_update_task',
-      { id: 't1', note: 'kept', deferDate: null },
+      {
+        id: 't1',
+        name: null,
+        note: 'kept',
+        tags: null,
+        deferDate: null,
+        dueDate: null,
+        repeat: { rule: null, schedule: null, anchor: null, catchUp: true },
+        clear: null,
+      },
       { reply: JSON.stringify({ task: MORNING_TASK }) },
     )
 
-    expect(reply.result.isError).toBe(true)
-    expect(reply.result.content[0].text).toContain('deferDate')
-    expect(await Bun.file(join(dir, 'source.js')).exists()).toBe(false)
+    expect(reply.result.isError).toBe(false)
+    expect((await sent()).args).toEqual({
+      id: 't1',
+      note: 'kept',
+      repeat: { catchUp: true },
+    })
+  })
+
+  test('the deferDate a complete is checked against stays required, and its null still means no defer date', async () => {
+    await callTool(
+      'omnifocus_complete_task',
+      { id: 't1', deferDate: null, skip: null },
+      { reply: JSON.stringify({ completed: MORNING_TASK, next: null }) },
+    )
+    expect((await sent()).args).toEqual({ id: 't1', deferDate: null })
+
+    const missing = await request('tools/call', {
+      name: 'omnifocus_complete_task',
+      arguments: { id: 't1' },
+    })
+    expect(missing.error?.message ?? missing.result?.content[0].text).toContain(
+      'deferDate',
+    )
   })
 
   test("a script's refusal is a tool error with its tag and message", async () => {

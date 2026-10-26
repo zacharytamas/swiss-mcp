@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { Option, Predicate, Schema, SchemaGetter } from 'effect'
 
 // Dates are local wall-clock time on this Mac, to the minute. The OmniJS scripts read and write them by their local
 // components, so nothing on this side does time-zone math.
@@ -149,37 +149,43 @@ export type ScriptFailure = typeof ScriptFailure.Type
 
 const NonEmpty = Schema.String.check(Schema.isNonEmpty())
 
-export const TaskName = NonEmpty
-export const TaskId = NonEmpty.annotate({
+// An optional tool parameter. The tool's JSON Schema lets a client send null for it, so null reads as left out.
+// Removing a value is only ever asked for through `clear`.
+const Omittable = <S extends Schema.Top>(s: S) =>
+  Schema.optionalKey(Schema.NullOr(Schema.toEncoded(s))).pipe(
+    Schema.decodeTo(Schema.optionalKey(s), {
+      decode: SchemaGetter.transformOptional(
+        Option.filter(Predicate.isNotNull),
+      ),
+      encode: SchemaGetter.passthroughSupertype(),
+    }),
+  )
+
+const TaskName = NonEmpty
+const TaskId = NonEmpty.annotate({
   description: "The task's id, as an OmniFocus tool returned it.",
 })
-export const TagRefs = Schema.Array(NonEmpty).annotate({
+const TagRefs = Schema.Array(NonEmpty).annotate({
   description:
     'Tags by full path such as "Slot/Morning", or by a name only one tag has. An unknown or ambiguous tag is an error; tags are never created.',
 })
-export const DeferDate = LocalDate(
-  'default start time (Settings > Dates & Times)',
-)
-export const DueDate = LocalDate('default due time (Settings > Dates & Times)')
-export const SeenDeferDate = Schema.NullOr(LocalMinute).annotate({
-  description:
-    "The task's deferDate exactly as a tool last returned it (YYYY-MM-DD HH:mm, or null if it had none).",
-})
+const DeferDate = LocalDate('default start time (Settings > Dates & Times)')
+const DueDate = LocalDate('default due time (Settings > Dates & Times)')
 
 const RepeatOptions = {
-  schedule: Schema.optional(
+  schedule: Omittable(
     Schedule.annotate({
       description:
         "regularly: the next occurrence follows the assigned dates. fromCompletion: it is counted from when this one is completed or dropped. Omit for OmniFocus's default.",
     }),
   ),
-  anchor: Schema.optional(
+  anchor: Omittable(
     Anchor.annotate({
       description:
         "The date OmniFocus uses to work out the next occurrence. Omit for OmniFocus's default.",
     }),
   ),
-  catchUp: Schema.optional(
+  catchUp: Omittable(
     Schema.Boolean.annotate({
       description:
         "Whether completing or dropping skips any occurrences already in the past (schedule regularly only). Omit for OmniFocus's default.",
@@ -191,19 +197,54 @@ const Rule = NonEmpty.annotate({
     'An RFC 5545 RRULE body without the "RRULE:" prefix, e.g. FREQ=DAILY.',
 })
 
-// Clearing is asked for by name, never by null: a strict-mode client sends null for every field it leaves out.
-export const Clear = Schema.Array(
-  Schema.Literals(['deferDate', 'dueDate', 'repeat']),
-).annotate({
-  description:
-    'Fields to remove from the task. A field named here must not also be given a value.',
+export const PerspectiveParams = Schema.Struct({
+  perspective: TaskName.annotate({
+    description:
+      "The custom perspective's exact name, as omnifocus_list_perspectives lists it.",
+  }),
 })
 
-export const RepeatInput = Schema.Struct({ rule: Rule, ...RepeatOptions })
-export const RepeatChange = Schema.Struct({
-  rule: Schema.optional(Rule),
-  ...RepeatOptions,
+export const CreateTaskParams = Schema.Struct({
+  name: TaskName,
+  note: Omittable(Schema.String),
+  tags: Omittable(TagRefs),
+  deferDate: Omittable(DeferDate),
+  dueDate: Omittable(DueDate),
+  repeat: Omittable(Schema.Struct({ rule: Rule, ...RepeatOptions })),
 })
+export type CreateTaskParams = typeof CreateTaskParams.Type
+
+export const UpdateTaskParams = Schema.Struct({
+  id: TaskId,
+  name: Omittable(TaskName),
+  note: Omittable(Schema.String),
+  tags: Omittable(TagRefs),
+  deferDate: Omittable(DeferDate),
+  dueDate: Omittable(DueDate),
+  repeat: Omittable(Schema.Struct({ rule: Omittable(Rule), ...RepeatOptions })),
+  clear: Omittable(
+    Schema.Array(Schema.Literals(['deferDate', 'dueDate', 'repeat'])).annotate({
+      description:
+        'Fields to remove from the task. A field named here must not also be given a value.',
+    }),
+  ),
+})
+export type UpdateTaskParams = typeof UpdateTaskParams.Type
+
+export const CompleteTaskParams = Schema.Struct({
+  id: TaskId,
+  deferDate: Schema.NullOr(LocalMinute).annotate({
+    description:
+      "The task's deferDate exactly as a tool last returned it (YYYY-MM-DD HH:mm, or null if it had none).",
+  }),
+  skip: Omittable(
+    Schema.Boolean.annotate({
+      description:
+        'true drops just this occurrence of a repeating task instead of completing it, so the task moves on to its next occurrence. A task that does not repeat is OmniFocusNotRepeating.',
+    }),
+  ),
+})
+export type CompleteTaskParams = typeof CompleteTaskParams.Type
 
 export const ToolFailure = Schema.Struct({
   error: Schema.String,

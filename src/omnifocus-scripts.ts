@@ -1,7 +1,8 @@
 import type {
-  RepeatChange,
-  RepeatInput,
+  CompleteTaskParams,
+  CreateTaskParams,
   ScriptFailure,
+  UpdateTaskParams,
 } from './omnifocus-schema.ts'
 
 // The OmniJS that runs inside OmniFocus. The scripts are TypeScript functions so that they are formatted, linted and
@@ -284,17 +285,8 @@ export const listTags: Script<NoArgs> = (_, omni) => ({
   })),
 })
 
-export interface CreateTaskArgs {
-  readonly name: string
-  readonly note?: string | undefined
-  readonly tags?: ReadonlyArray<string> | undefined
-  readonly deferDate?: string | undefined
-  readonly dueDate?: string | undefined
-  readonly repeat?: typeof RepeatInput.Type | undefined
-}
-
 // Into the Inbox, as Quick Entry does. Everything that can be refused is checked before the task exists.
-export const createTask: Script<CreateTaskArgs> = (args, omni) => {
+export const createTask: Script<CreateTaskParams> = (args, omni) => {
   const tags = omni.tags(args.tags ?? [])
   const deferDate =
     args.deferDate === undefined
@@ -326,20 +318,9 @@ export const createTask: Script<CreateTaskArgs> = (args, omni) => {
   return { task: omni.task(task) }
 }
 
-export interface UpdateTaskArgs {
-  readonly id: string
-  readonly name?: string | undefined
-  readonly note?: string | undefined
-  readonly tags?: ReadonlyArray<string> | undefined
-  readonly deferDate?: string | undefined
-  readonly dueDate?: string | undefined
-  readonly repeat?: typeof RepeatChange.Type | undefined
-  readonly clear?: ReadonlyArray<'deferDate' | 'dueDate' | 'repeat'> | undefined
-}
-
 // An omitted field is left alone and a field named in `clear` is removed. Everything that can be refused is checked
 // before anything changes.
-export const updateTask: Script<UpdateTaskArgs> = (args, omni) => {
+export const updateTask: Script<UpdateTaskParams> = (args, omni) => {
   const task = omni.find(args.id)
   const clear = args.clear ?? []
   for (const field of clear) {
@@ -399,15 +380,9 @@ export const updateTask: Script<UpdateTaskArgs> = (args, omni) => {
   return { task: omni.task(task) }
 }
 
-export interface CompleteTaskArgs {
-  readonly id: string
-  readonly deferDate: string | null
-  readonly skip?: boolean | undefined
-}
-
 // Completing a repeating task twice moves it on twice (measured on OmniFocus 4.9.3), so the caller says which
 // occurrence it means by the deferDate it saw, and a task that has moved on since is left alone.
-export const completeTask: Script<CompleteTaskArgs> = (args, omni) => {
+export const completeTask: Script<CompleteTaskParams> = (args, omni) => {
   const task = omni.find(args.id)
   const current = omni.local(task.deferDate)
   if (current !== args.deferDate) {
