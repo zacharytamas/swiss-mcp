@@ -2,9 +2,13 @@ import { Option, Predicate, Schema, SchemaGetter } from 'effect'
 import {
   OmniFocusNotRepeating,
   OmniFocusOccurrenceMoved,
+  OmniFocusProjectAmbiguous,
+  OmniFocusProjectClosed,
+  OmniFocusProjectNotFound,
   OmniFocusRepeatInvalid,
   OmniFocusTagAmbiguous,
   OmniFocusTagNotFound,
+  OmniFocusTaskIsProject,
   OmniFocusTaskNotFound,
   OmniFocusUpdateConflict,
 } from './omnifocus-errors.ts'
@@ -72,7 +76,8 @@ export const Task = Schema.Struct({
     description: 'Tag paths, parent first, e.g. "Slot/Morning".',
   }),
   project: Schema.NullOr(Schema.String).annotate({
-    description: 'The containing project, or null for an Inbox task.',
+    description:
+      'The containing project as its full path, parent folder first, e.g. "Domestic/Housekeeping"; null for an Inbox task.',
   }),
   repeat: Schema.NullOr(Repeat),
 })
@@ -150,6 +155,10 @@ export const ScriptFailure = Schema.Union([
   OmniFocusTaskNotFound,
   OmniFocusTagNotFound,
   OmniFocusTagAmbiguous,
+  OmniFocusProjectNotFound,
+  OmniFocusProjectAmbiguous,
+  OmniFocusProjectClosed,
+  OmniFocusTaskIsProject,
   OmniFocusRepeatInvalid,
   OmniFocusNotRepeating,
   OmniFocusUpdateConflict,

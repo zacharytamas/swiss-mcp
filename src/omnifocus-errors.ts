@@ -49,6 +49,26 @@ export class OmniFocusTagAmbiguous extends Schema.TaggedError<OmniFocusTagAmbigu
   fields,
 ) {}
 
+export class OmniFocusProjectNotFound extends Schema.TaggedError<OmniFocusProjectNotFound>()(
+  'OmniFocusProjectNotFound',
+  fields,
+) {}
+
+export class OmniFocusProjectAmbiguous extends Schema.TaggedError<OmniFocusProjectAmbiguous>()(
+  'OmniFocusProjectAmbiguous',
+  fields,
+) {}
+
+export class OmniFocusProjectClosed extends Schema.TaggedError<OmniFocusProjectClosed>()(
+  'OmniFocusProjectClosed',
+  fields,
+) {}
+
+export class OmniFocusTaskIsProject extends Schema.TaggedError<OmniFocusTaskIsProject>()(
+  'OmniFocusTaskIsProject',
+  fields,
+) {}
+
 export class OmniFocusRepeatInvalid extends Schema.TaggedError<OmniFocusRepeatInvalid>()(
   'OmniFocusRepeatInvalid',
   fields,
@@ -73,6 +93,10 @@ export type OmniFocusScriptError =
   | OmniFocusTaskNotFound
   | OmniFocusTagNotFound
   | OmniFocusTagAmbiguous
+  | OmniFocusProjectNotFound
+  | OmniFocusProjectAmbiguous
+  | OmniFocusProjectClosed
+  | OmniFocusTaskIsProject
   | OmniFocusRepeatInvalid
   | OmniFocusNotRepeating
   | OmniFocusUpdateConflict

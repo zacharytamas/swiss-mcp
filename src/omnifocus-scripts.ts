@@ -15,12 +15,26 @@ interface Enum<Name extends string> {
 }
 type ScheduleType = Enum<'Task.RepetitionScheduleType'>
 type AnchorDateKey = Enum<'Task.AnchorDateKey'>
+type ProjectStatus = Enum<'Project.Status'>
 
 interface OFTag {
   readonly id: { readonly primaryKey: string }
   readonly name: string
   readonly parent: OFTag | null
   readonly status: Enum<'Tag.Status'>
+}
+
+interface OFFolder {
+  readonly name: string
+  readonly parent: OFFolder | null
+}
+
+interface OFProject {
+  readonly id: { readonly primaryKey: string }
+  readonly name: string
+  readonly status: ProjectStatus
+  readonly parentFolder: OFFolder | null
+  readonly ending: unknown
 }
 
 interface OFRepetitionRule {
@@ -42,7 +56,8 @@ interface OFTask {
   readonly effectiveDeferDate: Date | null
   readonly tags: ReadonlyArray<OFTag>
   readonly children: ReadonlyArray<OFTask>
-  readonly containingProject: { readonly name: string } | null
+  // For a project's own root task, the project itself.
+  readonly containingProject: OFProject | null
   repetitionRule: OFRepetitionRule | null
   addTags(tags: ReadonlyArray<OFTag>): void
   removeTags(tags: ReadonlyArray<OFTag>): void
@@ -72,6 +87,9 @@ declare const Task: {
     Record<'DeferDate' | 'DueDate' | 'PlannedDate', AnchorDateKey>
   >
 }
+declare const Project: {
+  readonly Status: Readonly<Record<'Done' | 'Dropped', ProjectStatus>>
+}
 declare const Perspective: {
   readonly Custom: {
     readonly all: ReadonlyArray<{
@@ -85,6 +103,7 @@ declare const Perspective: {
 // Database order, inbox first.
 declare const flattenedTasks: ReadonlyArray<OFTask>
 declare const flattenedTags: ReadonlyArray<OFTag>
+declare const flattenedProjects: ReadonlyArray<OFProject>
 declare const inbox: { readonly ending: unknown }
 declare const settings: { objectForKey(key: string): unknown }
 
@@ -125,6 +144,12 @@ const lib = () => {
   const tagPath = (tag: OFTag) => {
     const names: Array<string> = []
     for (let at: OFTag | null = tag; at; at = at.parent) names.unshift(at.name)
+    return names.join('/')
+  }
+  const projectPath = (project: OFProject) => {
+    const names = [project.name]
+    for (let at = project.parentFolder; at; at = at.parent)
+      names.unshift(at.name)
     return names.join('/')
   }
 
@@ -170,7 +195,8 @@ const lib = () => {
     dueDate: local(t.dueDate),
     plannedDate: local(t.plannedDate),
     tags: t.tags.map(tagPath),
-    project: t.containingProject?.name ?? null,
+    project:
+      t.containingProject === null ? null : projectPath(t.containingProject),
     repeat:
       t.repetitionRule === null
         ? null
@@ -209,6 +235,44 @@ const lib = () => {
     })
   }
 
+  // Like a tag, a full path wins over a name. A task added to a completed project reopens it and one added to a dropped
+  // project is dropped too (measured on OmniFocus 4.9.3), so neither takes new tasks here.
+  const project = (ref: string) => {
+    const all = flattenedProjects.map((p) => ({
+      project: p,
+      path: projectPath(p),
+    }))
+    const byPath = all.filter((p) => p.path === ref)
+    const found =
+      byPath.length > 0 ? byPath : all.filter((p) => p.project.name === ref)
+    const [only, ...others] = found
+    if (only === undefined) {
+      return fail(
+        'OmniFocusProjectNotFound',
+        `No OmniFocus project has the path or name "${ref}". Projects are never created; omnifocus_list_projects lists them. Nothing changed.`,
+      )
+    }
+    if (others.length > 0) {
+      return fail(
+        'OmniFocusProjectAmbiguous',
+        `"${ref}" could be any of ${found.map((p) => JSON.stringify(p.path)).join(', ')}; give the full path. Nothing changed.`,
+      )
+    }
+    if (only.project.status === Project.Status.Done) {
+      return fail(
+        'OmniFocusProjectClosed',
+        `The OmniFocus project "${only.path}" is completed, and adding a task to it would reopen it. Reactivate it in OmniFocus first if you mean to. Nothing changed.`,
+      )
+    }
+    if (only.project.status === Project.Status.Dropped) {
+      return fail(
+        'OmniFocusProjectClosed',
+        `The OmniFocus project "${only.path}" is dropped, so a task added to it would be dropped already. Reactivate it in OmniFocus first if you mean to. Nothing changed.`,
+      )
+    }
+    return only.project
+  }
+
   // What the perspective rules need to know about tags.
   const tagTree = () =>
     flattenedTags.map((t) => ({
@@ -231,12 +295,14 @@ const lib = () => {
     date,
     enumName,
     tagPath,
+    projectPath,
     schedules,
     anchors,
     repetitionRule,
     task,
     find,
     tags,
+    project,
     tagTree,
     perspectives,
   }
