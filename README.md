@@ -78,7 +78,7 @@ What a task means is left to OmniFocus. `status` is OmniFocus's own task status.
 
 ```sh
 bun scripts/verify-omnifocus.ts            # read-only: perspectives, tags, and each supported perspective's tasks
-bun scripts/verify-omnifocus.ts --write    # also creates, updates, completes and skips a throwaway repeating task, then deletes it
+bun scripts/verify-omnifocus.ts --write    # also creates a throwaway project and repeating task in it, updates, completes, skips and moves the task, then deletes them
 bun scripts/verify-omnifocus.ts --parity   # compares each supported perspective with what OmniFocus shows in a temporary tab
 ```
 

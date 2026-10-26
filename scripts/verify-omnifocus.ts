@@ -1,6 +1,8 @@
 // Calls the OmniFocus tools through the real MCP server and checks what OmniFocus reports back.
-// Default: read-only (list perspectives and tags, and each supported perspective's tasks).
-// --write: create, update, complete and skip a throwaway repeating task, then delete every task with its exact name.
+// Default: read-only (list perspectives, tags and projects, and each supported perspective's tasks).
+// --write: create a throwaway project, and in it create, update, complete and skip a throwaway repeating task, move it
+// to the Inbox and back, and check a dropped throwaway project takes no task. Then delete every task and project with
+// the throwaway names.
 // A failed write step stops the ones after it, so nothing acts on a task the server returned wrongly.
 // --parity: compare each supported perspective's tasks with what OmniFocus renders for it in a temporary tab.
 type Item = Record<string, any>
@@ -105,6 +107,13 @@ await check('omnifocus_list_tags', {}, (c) =>
     : 'tags missing path',
 )
 
+await check('omnifocus_list_projects', {}, (c) =>
+  Array.isArray(c.projects) &&
+  c.projects.every((p: Item) => typeof p.path === 'string')
+    ? undefined
+    : 'projects missing path',
+)
+
 const shown = new Map<string, ReadonlyArray<Item>>()
 for (const p of supported) {
   const content = await check(
@@ -120,16 +129,35 @@ for (const p of supported) {
 
 if (write) {
   const name = `swiss-mcp verify (safe to delete) ${new Date().toISOString().slice(0, 19)}`
+  // Top-level, so a project's path is its name.
+  const project = `${name} project`
+  const dropped = `${name} dropped project`
   const pad = (n: number) => String(n).padStart(2, '0')
   const now = new Date()
   const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
   const later = (a: unknown, b: unknown) =>
     typeof a === 'string' && typeof b === 'string' && a > b
   try {
+    await omnijs(
+      `((active, dropped) => {
+  new Project(active)
+  new Project(dropped).status = Project.Status.Dropped
+  return JSON.stringify(null)
+})(${JSON.stringify(project)}, ${JSON.stringify(dropped)})`,
+    )
+    await step('omnifocus_list_projects', {}, ({ projects }) => {
+      const status = (path: string) =>
+        projects?.find((p: Item) => p.path === path)?.status
+      return status(project) !== 'Active' || status(dropped) !== 'Dropped'
+        ? `the throwaway projects are listed as ${status(project)} and ${status(dropped)}`
+        : undefined
+    })
+
     const created = await step(
       'omnifocus_create_task',
       {
         name,
+        project,
         deferDate: today,
         repeat: {
           rule: 'FREQ=DAILY',
@@ -140,12 +168,14 @@ if (write) {
       ({ task }) =>
         task?.name !== name
           ? 'created with another name'
-          : !String(task.deferDate).startsWith(`${today} `)
-            ? `deferDate ${task.deferDate} is not on ${today} at the default start time`
-            : task.repeat?.rule !== 'FREQ=DAILY' ||
-                task.repeat?.anchor !== 'deferDate'
-              ? `repeat is ${JSON.stringify(task.repeat)}`
-              : undefined,
+          : task.project !== project
+            ? `created in ${task.project}, not the throwaway project`
+            : !String(task.deferDate).startsWith(`${today} `)
+              ? `deferDate ${task.deferDate} is not on ${today} at the default start time`
+              : task.repeat?.rule !== 'FREQ=DAILY' ||
+                  task.repeat?.anchor !== 'deferDate'
+                ? `repeat is ${JSON.stringify(task.repeat)}`
+                : undefined,
     )
     const id = created.task.id
     const seen = created.task.deferDate
@@ -217,19 +247,51 @@ if (write) {
             ? 'clearing changed the note'
             : undefined,
     )
+
+    await step(
+      'omnifocus_update_task',
+      { id, clear: ['project'] },
+      ({ task }) =>
+        task?.project !== null
+          ? `project is ${task?.project} after clearing it`
+          : undefined,
+    )
+    await step('omnifocus_update_task', { id, project }, ({ task }) =>
+      task?.project !== project
+        ? `project is ${task?.project}, not the throwaway project`
+        : undefined,
+    )
+
+    const closed = await call('omnifocus_create_task', {
+      name,
+      project: dropped,
+    })
+    report(
+      `omnifocus_create_task in a dropped project (${closed.ms} ms)`,
+      closed.error?.error === 'OmniFocusProjectClosed'
+        ? undefined
+        : `expected OmniFocusProjectClosed, got ${JSON.stringify(closed.error ?? closed.content)}`,
+      closed.error,
+    )
   } catch (e) {
     report('write checks', (e as Error).message)
   } finally {
     const cleanup = await omnijs(
-      `((name) => {
-  const mine = flattenedTasks.filter((t) => t.name === name)
-  mine.forEach((t) => deleteObject(t))
-  return JSON.stringify({ deleted: mine.length, left: flattenedTasks.filter((t) => t.name === name).length })
-})(${JSON.stringify(name)})`,
+      `((name, projects) => {
+  const tasks = () => flattenedTasks.filter((t) => t.name === name)
+  const mine = () => flattenedProjects.filter((p) => projects.includes(p.name))
+  const deleted = { tasks: tasks().length, projects: mine().length }
+  tasks().forEach((t) => deleteObject(t))
+  mine().forEach((p) => deleteObject(p))
+  return JSON.stringify({ deleted, left: { tasks: tasks().length, projects: mine().length } })
+})(${JSON.stringify(name)}, ${JSON.stringify([project, dropped])})`,
     ).catch((e: Error) => ({ error: e.message }))
+    const left = (cleanup as Item).left
     report(
       'cleanup',
-      (cleanup as Item).left === 0 ? undefined : 'tasks left behind',
+      left?.tasks === 0 && left?.projects === 0
+        ? undefined
+        : 'tasks or projects left behind',
       cleanup,
     )
   }
