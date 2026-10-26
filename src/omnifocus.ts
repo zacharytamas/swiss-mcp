@@ -226,7 +226,7 @@ export const OmniFocusToolkit = Toolkit.make(
   ),
   omnifocusTool(
     'omnifocus_perspective_tasks',
-    "The tasks an OmniFocus custom perspective shows, worked out from the perspective's own filter rules over every remaining task. They come in OmniFocus database order (Inbox first), not the perspective's sort order, and without its grouping. A perspective with a rule this server can't evaluate is OmniFocusPerspectiveUnsupported, naming the rule; omnifocus_list_perspectives shows which are supported.",
+    "The tasks an OmniFocus custom perspective shows, worked out from the perspective's own filter rules over every remaining task. They come in OmniFocus database order (Inbox first), not the perspective's sort order, and without its grouping. A project the perspective matches is listed as a task whose project is itself. A perspective with a rule this server can't evaluate is OmniFocusPerspectiveUnsupported, naming the rule; omnifocus_list_perspectives shows which are supported.",
     Schema.Struct({
       perspective: TaskName.annotate({
         description:
