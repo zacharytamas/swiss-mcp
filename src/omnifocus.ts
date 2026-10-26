@@ -208,14 +208,14 @@ export const OmniFocusToolkit = Toolkit.make(
   ),
   omnifocusTool(
     'omnifocus_list_tags',
-    'List your OmniFocus tags in OmniFocus order, each with its full path (parent first, e.g. Slot/Morning) and status. The OmniFocus task tools take a tag by path, or by a name only one tag has.',
+    'List your OmniFocus tags in OmniFocus order, each with its full path (parent first, e.g. Slot/Morning) and status. The OmniFocus task tools take a tag by id, by path, or by a name only one tag has.',
     Tool.EmptyParams,
     TagList,
     'reads',
   ),
   omnifocusTool(
     'omnifocus_list_projects',
-    'List your OmniFocus projects in OmniFocus order, whatever their status, each with its full path (parent folder first, e.g. Domestic/Housekeeping) and status. The OmniFocus task tools take a project by path, or by a name only one project has.',
+    'List your OmniFocus projects in OmniFocus order, whatever their status, each with its full path (parent folder first, e.g. Domestic/Housekeeping) and status. The OmniFocus task tools take a project by id, by path, or by a name only one project has.',
     Tool.EmptyParams,
     ProjectList,
     'reads',

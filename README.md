@@ -91,8 +91,8 @@ Measured on OmniFocus 4.9.3:
 - Only these perspective rules are evaluated: availability (available or remaining), has any or all of some tags, has no children, has a defer date, nested all/any/none groups, and disabled rules. A perspective with any other rule is unsupported, and so is one that could show completed or dropped items (such as the Completed and Changed perspectives). `omnifocus_list_perspectives` says why.
 - Perspectives are read-only by design. No tool creates or edits one, and built-in perspectives such as Forecast aren't available.
 - `omnifocus_complete_task` tells occurrences apart by `deferDate`, so for a repeating task without a defer date it can't stop a second completion.
-- Tags must already exist. A tag is given by its full path or by a name only one tag has.
-- Projects must already exist, and are given the same way, by full path (folders first) or by a name only one project has. A completed or dropped project takes no tasks: OmniFocus would reopen a completed one, and a task added to a dropped one is dropped. An on-hold project takes them, and they are Blocked.
+- Tags must already exist. A tag is given by its id, by its full path or by a name only one tag has.
+- Projects must already exist, and are given the same way, by id, by full path (folders first) or by a name only one project has. A completed or dropped project takes no tasks: OmniFocus would reopen a completed one, and a task added to a dropped one is dropped. An on-hold project takes them, and they are Blocked.
 
 ## Slack
 

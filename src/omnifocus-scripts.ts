@@ -217,33 +217,49 @@ const lib = () => {
     Task.byIdentifier(id) ??
     fail('OmniFocusTaskNotFound', `No OmniFocus task has the id "${id}".`)
 
-  // A full path wins over a name, so "Errands" is the top-level tag even if another tag is also named Errands.
+  // What the first test that matches anything matches.
+  const firstMatch = <T>(
+    all: ReadonlyArray<T>,
+    ...tests: ReadonlyArray<(item: T) => boolean>
+  ) => {
+    for (const test of tests) {
+      const found = all.filter(test)
+      if (found.length > 0) return found
+    }
+    return []
+  }
+
+  // An id wins over a full path, and a full path over a name, so "Errands" is the top-level tag even if another tag is
+  // also named Errands.
   const tags = (refs: ReadonlyArray<string>) => {
     const all = flattenedTags.map((tag) => ({ tag, path: tagPath(tag) }))
     return refs.map((ref) => {
-      const byPath = all.filter((t) => t.path === ref)
-      const found =
-        byPath.length > 0 ? byPath : all.filter((t) => t.tag.name === ref)
+      const found = firstMatch(
+        all,
+        (t) => t.tag.id.primaryKey === ref,
+        (t) => t.path === ref,
+        (t) => t.tag.name === ref,
+      )
       const [only, ...others] = found
       if (only === undefined) {
         return fail(
           'OmniFocusTagNotFound',
-          `No OmniFocus tag has the path or name "${ref}". Tags are never created; omnifocus_list_tags lists them. Nothing changed.`,
+          `No OmniFocus tag has the id, path or name "${ref}". Tags are never created; omnifocus_list_tags lists them. Nothing changed.`,
         )
       }
       if (others.length > 0) {
         return fail(
           'OmniFocusTagAmbiguous',
-          `"${ref}" could be any of ${found.map((t) => JSON.stringify(t.path)).join(', ')}; give the full path. Nothing changed.`,
+          `"${ref}" could be any of ${found.map((t) => `${JSON.stringify(t.path)} (id ${t.tag.id.primaryKey})`).join(', ')}; give the full path or the id. Nothing changed.`,
         )
       }
       return only.tag
     })
   }
 
-  // Like a tag, a full path wins over a name. A task added to a completed project reopens it and one added to a dropped
-  // project is dropped too (measured on OmniFocus 4.9.3), so neither takes new tasks here. That also keeps an old
-  // completed project from making an open one of the same path ambiguous.
+  // Looked up like a tag. A task added to a completed project reopens it and one added to a dropped project is dropped
+  // too (measured on OmniFocus 4.9.3), so neither takes new tasks here. That also keeps an old completed project from
+  // making an open one of the same path ambiguous.
   const project = (ref: string) => {
     const all = flattenedProjects.map((p) => ({
       project: p,
@@ -255,15 +271,18 @@ const lib = () => {
             ? 'dropped, so a task added to it would be dropped already'
             : null,
     }))
-    const byPath = all.filter((p) => p.path === ref)
-    const found =
-      byPath.length > 0 ? byPath : all.filter((p) => p.project.name === ref)
+    const found = firstMatch(
+      all,
+      (p) => p.project.id.primaryKey === ref,
+      (p) => p.path === ref,
+      (p) => p.project.name === ref,
+    )
     const open = found.filter((p) => p.closed === null)
     const [only, ...others] = open
     if (found.length === 0) {
       return fail(
         'OmniFocusProjectNotFound',
-        `No OmniFocus project has the path or name "${ref}". Projects are never created; omnifocus_list_projects lists them. Nothing changed.`,
+        `No OmniFocus project has the id, path or name "${ref}". Projects are never created; omnifocus_list_projects lists them. Nothing changed.`,
       )
     }
     if (only === undefined) {
@@ -275,7 +294,7 @@ const lib = () => {
     if (others.length > 0) {
       return fail(
         'OmniFocusProjectAmbiguous',
-        `"${ref}" could be any of ${open.map((p) => JSON.stringify(p.path)).join(', ')}; give the full path. Nothing changed.`,
+        `"${ref}" could be any of ${open.map((p) => `${JSON.stringify(p.path)} (id ${p.project.id.primaryKey})`).join(', ')}; give the full path or the id. Nothing changed.`,
       )
     }
     return only.project
