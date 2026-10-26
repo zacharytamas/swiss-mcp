@@ -7,7 +7,6 @@ const LocalMinute = Schema.String.check(
     message: 'must be YYYY-MM-DD HH:mm in local time',
   }),
 )
-const Day = '\\d{4}-\\d{2}-\\d{2}'
 // JS Date would roll "2026-02-30" forward to March 2, so the written fields must read back unchanged.
 const exists = Schema.makeFilter<string>((s) => {
   const [y, mo, d, h = 0, mi = 0] = s.split(/[- :]/).map(Number)
@@ -24,7 +23,7 @@ const exists = Schema.makeFilter<string>((s) => {
 // description is what tells an MCP client the format; it is attached before the date-exists filter.
 const LocalDate = (defaultTime: string) =>
   Schema.String.check(
-    Schema.isPattern(new RegExp(`^${Day}( \\d{2}:\\d{2})?$`), {
+    Schema.isPattern(/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/, {
       message: 'must be YYYY-MM-DD or YYYY-MM-DD HH:mm in local time',
     }),
   )
