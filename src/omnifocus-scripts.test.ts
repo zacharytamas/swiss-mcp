@@ -280,11 +280,22 @@ describe('createTask', () => {
     // On hold, which still takes tasks.
     ['Bikes', 'bikes', 'Bikes'],
     ['Reading', 'reading', 'Reading'],
+    // By id, which also tells apart projects a name or path can't.
+    ['work-shopping', 'work-shopping', 'Work/Shopping'],
   ])('creates at the end of the project %s', (ref, id, path) => {
     const { task } = evaluate(createTask, { name: 'x', project: ref })
 
     expect(task.project).toBe(path)
     expect(tasks[0]?.position).toBe(`${id}.ending`)
+  })
+
+  test.each([
+    ['evening2', 'Work/Evening'],
+    ['morning', 'Slot/Morning'],
+  ])('takes the tag %s by id', (ref, path) => {
+    const { task } = evaluate(createTask, { name: 'x', tags: [ref] })
+
+    expect(task.tags).toEqual([path])
   })
 
   test('a date alone for dueDate takes the default due time', () => {
@@ -335,7 +346,7 @@ describe('createTask', () => {
     [
       { tags: ['Evening'] },
       'OmniFocusTagAmbiguous',
-      '"Slot/Evening", "Work/Evening"',
+      '"Slot/Evening" (id evening), "Work/Evening" (id evening2); give the full path or the id',
     ],
     [
       { repeat: { rule: 'EVERY DAY' } },
@@ -346,9 +357,10 @@ describe('createTask', () => {
     [
       { project: 'Shopping' },
       'OmniFocusProjectAmbiguous',
-      '"Home/Shopping", "Work/Shopping"',
+      '"Home/Shopping" (id home-shopping), "Work/Shopping" (id work-shopping); give the full path or the id',
     ],
     [{ project: 'Taxes' }, 'OmniFocusProjectClosed', '"Taxes" is completed'],
+    [{ project: 'taxes' }, 'OmniFocusProjectClosed', '"Taxes" is completed'],
     [
       { project: 'Cello' },
       'OmniFocusProjectClosed',
