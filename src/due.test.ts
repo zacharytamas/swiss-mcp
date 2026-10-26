@@ -153,7 +153,10 @@ describe.each(['2025-06-18', '2025-11-25'])(
 
       expect(
         tools
-          .filter((t) => t.inputSchema.properties?.dueDate)
+          .filter(
+            (t) =>
+              t.name.startsWith('due_') && t.inputSchema.properties?.dueDate,
+          )
           .map((t) => [
             t.name,
             t.inputSchema.properties?.dueDate?.description?.includes(

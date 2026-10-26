@@ -5,17 +5,24 @@ import { McpProtocol, McpServer, Toolkit } from 'effect/ai'
 import pkg from '../package.json' with { type: 'json' }
 import { DueToolkit, DueToolkitLive } from './due.ts'
 import { Focus } from './focus.ts'
+import {
+  OmniFocus,
+  OmniFocusToolkit,
+  OmniFocusToolkitLive,
+} from './omnifocus.ts'
 import { Shortcuts } from './shortcuts.ts'
 import { SlackApi, SlackToolkit, SlackToolkitLive } from './slack.ts'
 import { YnabToolkit, YnabToolkitLive } from './ynab.ts'
 
 export const ServerLive = McpServer.toolkit(
-  Toolkit.merge(DueToolkit, SlackToolkit, YnabToolkit),
+  Toolkit.merge(DueToolkit, OmniFocusToolkit, SlackToolkit, YnabToolkit),
 ).pipe(
   Layer.provide(DueToolkitLive),
+  Layer.provide(OmniFocusToolkitLive),
   Layer.provide(SlackToolkitLive),
   Layer.provide(YnabToolkitLive),
   Layer.provide(Shortcuts.layer),
+  Layer.provide(OmniFocus.layer),
   Layer.provide(Focus.layer),
   Layer.provide(SlackApi.layer),
   Layer.provideMerge(

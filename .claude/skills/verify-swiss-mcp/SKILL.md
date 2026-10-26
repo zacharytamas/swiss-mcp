@@ -48,7 +48,7 @@ Due also needs the `swiss-due` shortcut imported once per Mac. That is a manual,
 | -------------------------------------- | ------------------- |
 | `jq 1.6+ missing`                      | every feature       |
 | `deps missing`                         | every feature       |
-| `server tools/list: expected 19 tools` | every feature       |
+| `server tools/list: expected 25 tools` | every feature       |
 | `swiss-due shortcut missing`           | Due features only   |
 | `SLACK_USER_TOKEN missing`             | Slack features only |
 
