@@ -402,13 +402,17 @@ describe('OmniFocus tools over MCP', () => {
   test('omnifocus_update_task sends what to clear by name and leaves out what to keep', async () => {
     await callTool(
       'omnifocus_update_task',
-      { id: 't1', clear: ['deferDate'], repeat: { catchUp: true } },
+      {
+        id: 't1',
+        clear: ['deferDate', 'project'],
+        repeat: { catchUp: true },
+      },
       { reply: JSON.stringify({ task: MORNING_TASK }) },
     )
 
     expect((await sent()).args).toEqual({
       id: 't1',
-      clear: ['deferDate'],
+      clear: ['deferDate', 'project'],
       repeat: { catchUp: true },
     })
   })
@@ -420,6 +424,7 @@ describe('OmniFocus tools over MCP', () => {
         id: 't1',
         name: null,
         note: 'kept',
+        project: null,
         tags: null,
         deferDate: null,
         dueDate: null,

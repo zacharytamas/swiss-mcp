@@ -229,7 +229,7 @@ export const OmniFocusToolkit = Toolkit.make(
   ),
   omnifocusTool(
     'omnifocus_update_task',
-    `Change one OmniFocus task. Fields you leave out stay as they are; to remove deferDate, dueDate or repeat, name it in clear. tags replaces all of the task's tags ([] removes them). repeat changes only the fields you give and keeps the rest of the existing rule; for a task that does not repeat yet it needs a rule. ${dates} ${repeats} ${stored}`,
+    `Change one OmniFocus task. Fields you leave out stay as they are; to remove deferDate, dueDate or repeat, name it in clear. project moves the task to the end of that project, and naming project in clear moves it to the Inbox; a task already there is not moved. A project itself, as omnifocus_perspective_tasks may list it, can't be moved (OmniFocusTaskIsProject). tags replaces all of the task's tags ([] removes them). repeat changes only the fields you give and keeps the rest of the existing rule; for a task that does not repeat yet it needs a rule. ${dates} ${repeats} ${stored}`,
     UpdateTaskParams,
     TaskResult,
     'changes',

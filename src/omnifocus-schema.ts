@@ -253,14 +253,17 @@ export const UpdateTaskParams = Schema.Struct({
   id: TaskId,
   name: Omittable(TaskName),
   note: Omittable(Schema.String),
+  project: Omittable(ProjectRef),
   tags: Omittable(TagRefs),
   deferDate: Omittable(DeferDate),
   dueDate: Omittable(DueDate),
   repeat: Omittable(Schema.Struct({ rule: Omittable(Rule), ...RepeatOptions })),
   clear: Omittable(
-    Schema.Array(Schema.Literals(['deferDate', 'dueDate', 'repeat'])).annotate({
+    Schema.Array(
+      Schema.Literals(['deferDate', 'dueDate', 'repeat', 'project']),
+    ).annotate({
       description:
-        'Fields to remove from the task. A field named here must not also be given a value.',
+        'Fields to remove from the task; project moves it to the Inbox. A field named here must not also be given a value.',
     }),
   ),
 })
