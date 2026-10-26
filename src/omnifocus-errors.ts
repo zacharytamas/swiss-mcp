@@ -59,6 +59,11 @@ export class OmniFocusNotRepeating extends Schema.TaggedError<OmniFocusNotRepeat
   fields,
 ) {}
 
+export class OmniFocusUpdateConflict extends Schema.TaggedError<OmniFocusUpdateConflict>()(
+  'OmniFocusUpdateConflict',
+  fields,
+) {}
+
 export class OmniFocusOccurrenceMoved extends Schema.TaggedError<OmniFocusOccurrenceMoved>()(
   'OmniFocusOccurrenceMoved',
   fields,
@@ -70,6 +75,7 @@ export type OmniFocusScriptError =
   | OmniFocusTagAmbiguous
   | OmniFocusRepeatInvalid
   | OmniFocusNotRepeating
+  | OmniFocusUpdateConflict
   | OmniFocusOccurrenceMoved
 
 export type OmniFocusError =

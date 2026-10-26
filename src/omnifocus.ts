@@ -27,8 +27,10 @@ import {
   OmniFocusTagNotFound,
   OmniFocusTaskNotFound,
   OmniFocusTimedOut,
+  OmniFocusUpdateConflict,
 } from './omnifocus-errors.ts'
 import {
+  Clear,
   CompleteResult,
   DeferDate,
   DueDate,
@@ -75,6 +77,7 @@ const refusals: Record<
   OmniFocusTagAmbiguous,
   OmniFocusRepeatInvalid,
   OmniFocusNotRepeating,
+  OmniFocusUpdateConflict,
   OmniFocusOccurrenceMoved,
 }
 
@@ -259,15 +262,16 @@ export const OmniFocusToolkit = Toolkit.make(
   ),
   omnifocusTool(
     'omnifocus_update_task',
-    `Change one OmniFocus task. Fields you leave out stay as they are; null clears deferDate, dueDate or repeat. tags replaces all of the task's tags ([] removes them). repeat changes only the fields you give and keeps the rest of the existing rule; for a task that does not repeat yet it needs a rule. ${dates} ${repeats} ${stored}`,
+    `Change one OmniFocus task. Fields you leave out stay as they are; to remove deferDate, dueDate or repeat, name it in clear. tags replaces all of the task's tags ([] removes them). repeat changes only the fields you give and keeps the rest of the existing rule; for a task that does not repeat yet it needs a rule. ${dates} ${repeats} ${stored}`,
     Schema.Struct({
       id: TaskId,
       name: Schema.optional(TaskName),
       note: Schema.optional(Schema.String),
       tags: Schema.optional(TagRefs),
-      deferDate: Schema.optional(Schema.NullOr(DeferDate)),
-      dueDate: Schema.optional(Schema.NullOr(DueDate)),
-      repeat: Schema.optional(Schema.NullOr(RepeatChange)),
+      deferDate: Schema.optional(DeferDate),
+      dueDate: Schema.optional(DueDate),
+      repeat: Schema.optional(RepeatChange),
+      clear: Schema.optional(Clear),
     }),
     TaskResult,
     'changes',

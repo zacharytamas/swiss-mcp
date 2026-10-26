@@ -331,28 +331,40 @@ export interface UpdateTaskArgs {
   readonly name?: string | undefined
   readonly note?: string | undefined
   readonly tags?: ReadonlyArray<string> | undefined
-  readonly deferDate?: string | null | undefined
-  readonly dueDate?: string | null | undefined
-  readonly repeat?: typeof RepeatChange.Type | null | undefined
+  readonly deferDate?: string | undefined
+  readonly dueDate?: string | undefined
+  readonly repeat?: typeof RepeatChange.Type | undefined
+  readonly clear?: ReadonlyArray<'deferDate' | 'dueDate' | 'repeat'> | undefined
 }
 
-// An omitted field is left alone and null clears it. Everything that can be refused is checked before anything
-// changes.
+// An omitted field is left alone and a field named in `clear` is removed. Everything that can be refused is checked
+// before anything changes.
 export const updateTask: Script<UpdateTaskArgs> = (args, omni) => {
   const task = omni.find(args.id)
+  const clear = args.clear ?? []
+  for (const field of clear) {
+    if (args[field] !== undefined) {
+      omni.fail(
+        'OmniFocusUpdateConflict',
+        `${field} is both given and cleared. Nothing changed.`,
+      )
+    }
+  }
   const tags = args.tags === undefined ? undefined : omni.tags(args.tags)
-  const deferDate =
-    args.deferDate == null
-      ? args.deferDate
+  const deferDate = clear.includes('deferDate')
+    ? null
+    : args.deferDate === undefined
+      ? undefined
       : omni.date(args.deferDate, 'DefaultStartTime')
-  const dueDate =
-    args.dueDate == null
-      ? args.dueDate
+  const dueDate = clear.includes('dueDate')
+    ? null
+    : args.dueDate === undefined
+      ? undefined
       : omni.date(args.dueDate, 'DefaultDueTime')
 
   // A rule can't be edited in place, so a partial change is rebuilt on the fields of the existing rule.
   let rule: OFRepetitionRule | null | undefined
-  if (args.repeat === null) rule = null
+  if (clear.includes('repeat')) rule = null
   else if (args.repeat !== undefined) {
     const change = args.repeat
     const old = task.repetitionRule
