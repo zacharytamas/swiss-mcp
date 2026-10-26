@@ -29,7 +29,7 @@ const LocalDate = (defaultTime: string) =>
     }),
   )
     .annotate({
-      description: `Local date on this Mac as YYYY-MM-DD HH:mm (e.g. 2026-10-27 09:30), or YYYY-MM-DD for OmniFocus's ${defaultTime} on that day. null clears it.`,
+      description: `Local date on this Mac as YYYY-MM-DD HH:mm (e.g. 2026-10-27 09:30), or YYYY-MM-DD for OmniFocus's ${defaultTime} on that day.`,
     })
     .check(exists)
 
