@@ -242,38 +242,40 @@ const lib = () => {
   }
 
   // Like a tag, a full path wins over a name. A task added to a completed project reopens it and one added to a dropped
-  // project is dropped too (measured on OmniFocus 4.9.3), so neither takes new tasks here.
+  // project is dropped too (measured on OmniFocus 4.9.3), so neither takes new tasks here. That also keeps an old
+  // completed project from making an open one of the same path ambiguous.
   const project = (ref: string) => {
     const all = flattenedProjects.map((p) => ({
       project: p,
       path: projectPath(p),
+      closed:
+        p.status === Project.Status.Done
+          ? 'completed, and adding a task to it would reopen it'
+          : p.status === Project.Status.Dropped
+            ? 'dropped, so a task added to it would be dropped already'
+            : null,
     }))
     const byPath = all.filter((p) => p.path === ref)
     const found =
       byPath.length > 0 ? byPath : all.filter((p) => p.project.name === ref)
-    const [only, ...others] = found
-    if (only === undefined) {
+    const open = found.filter((p) => p.closed === null)
+    const [only, ...others] = open
+    if (found.length === 0) {
       return fail(
         'OmniFocusProjectNotFound',
         `No OmniFocus project has the path or name "${ref}". Projects are never created; omnifocus_list_projects lists them. Nothing changed.`,
       )
     }
+    if (only === undefined) {
+      return fail(
+        'OmniFocusProjectClosed',
+        `${found.map((p) => `The OmniFocus project "${p.path}" is ${p.closed}.`).join(' ')} Reactivate it in OmniFocus first if you mean to. Nothing changed.`,
+      )
+    }
     if (others.length > 0) {
       return fail(
         'OmniFocusProjectAmbiguous',
-        `"${ref}" could be any of ${found.map((p) => JSON.stringify(p.path)).join(', ')}; give the full path. Nothing changed.`,
-      )
-    }
-    if (only.project.status === Project.Status.Done) {
-      return fail(
-        'OmniFocusProjectClosed',
-        `The OmniFocus project "${only.path}" is completed, and adding a task to it would reopen it. Reactivate it in OmniFocus first if you mean to. Nothing changed.`,
-      )
-    }
-    if (only.project.status === Project.Status.Dropped) {
-      return fail(
-        'OmniFocusProjectClosed',
-        `The OmniFocus project "${only.path}" is dropped, so a task added to it would be dropped already. Reactivate it in OmniFocus first if you mean to. Nothing changed.`,
+        `"${ref}" could be any of ${open.map((p) => JSON.stringify(p.path)).join(', ')}; give the full path. Nothing changed.`,
       )
     }
     return only.project
