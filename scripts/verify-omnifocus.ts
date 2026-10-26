@@ -212,41 +212,46 @@ if (write) {
 }
 
 if (parity && supported.length > 0) {
-  const last = supported.at(-1)?.name ?? ''
-  // OmniJS tab.close() leaves the tab open, so the tab is closed from JXA: only a window that was not open before and
-  // shows the last perspective, which is the temporary tab.
+  // JXA window ids move between tabs when a tab opens, and OmniJS tab.close() leaves the tab open. So the temporary
+  // tab ends on a perspective none of the user's windows was showing, and JXA closes the one window showing it.
+  const candidates = (listed?.perspectives ?? []).map((p: Item) => p.name)
   const jxa = `function run(argv) {
   const of = Application('OmniFocus')
-  const before = of.windows().map((w) => { try { return w.id() } catch (e) { return null } })
+  const shown = of.windows().map((w) => { try { return w.perspectiveName() } catch (e) { return null } })
+  const marker = JSON.parse(argv[1]).find((name) => !shown.includes(name))
+  if (marker === undefined) throw new Error('every custom perspective is open in a window, so the temporary tab could not be told apart')
   try {
-    return of.evaluateJavascript(argv[0])
+    return of.evaluateJavascript(argv[0].replace('__MARKER__', () => JSON.stringify(marker)))
   } finally {
     delay(0.3)
-    const mine = of.windows().filter((w) => {
-      try { return !before.includes(w.id()) && w.perspectiveName() === argv[1] } catch (e) { return false }
-    })
-    mine.reverse().forEach((w) => w.close())
-    console.log('closed ' + mine.length + ' temporary tab(s)')
+    const mine = of.windows().filter((w) => { try { return w.perspectiveName() === marker } catch (e) { return false } })
+    if (mine.length === 1) mine[0].close()
+    console.log(mine.length === 1 ? 'closed the temporary tab' : 'left ' + mine.length + ' window(s) showing ' + marker + ' open; close the temporary tab by hand')
   }
 }`
-  const source = `(async (ids) => {
+  const source = `(async (ids, marker) => {
   const tab = await document.newTabOnWindow(document.windows[0])
   const rendered = {}
-  for (const id of ids) {
-    tab.perspective = Perspective.Custom.byIdentifier(id)
-    const seen = []
-    tab.content.rootNode.apply((node) => {
-      if (node.object instanceof Task) seen.push(node.object.id.primaryKey)
-    })
-    rendered[id] = seen
+  try {
+    for (const id of ids) {
+      tab.perspective = Perspective.Custom.byIdentifier(id)
+      const seen = []
+      tab.content.rootNode.apply((node) => {
+        if (node.object instanceof Task) seen.push(node.object.id.primaryKey)
+      })
+      rendered[id] = seen
+    }
+  } finally {
+    tab.perspective = Perspective.Custom.byName(marker)
   }
   return JSON.stringify(rendered)
-})(${JSON.stringify(supported.map((p) => p.id))})`
+})(${JSON.stringify(supported.map((p) => p.id))}, __MARKER__)`
   try {
-    const rendered = (await omnijs(source, jxa, last)) as Record<
-      string,
-      ReadonlyArray<string>
-    >
+    const rendered = (await omnijs(
+      source,
+      jxa,
+      JSON.stringify(candidates),
+    )) as Record<string, ReadonlyArray<string>>
     for (const p of supported) {
       const ours = shown.get(p.id) ?? []
       const theirs = new Set(rendered[p.id] ?? [])
