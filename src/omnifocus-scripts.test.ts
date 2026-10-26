@@ -239,6 +239,10 @@ beforeEach(() => {
     project('bikes', 'Bikes', null, ProjectStatus.OnHold),
     project('taxes', 'Taxes', null, ProjectStatus.Done),
     project('cello', 'Cello', null, ProjectStatus.Dropped),
+    // An old completed Reading and the open one share a path.
+    project('reading-2025', 'Reading', null, ProjectStatus.Done),
+    project('reading', 'Reading'),
+    project('old-cello', 'Cello', null, ProjectStatus.Done),
   ]
 })
 
@@ -275,6 +279,7 @@ describe('createTask', () => {
     ['Garden', 'garden', 'Garden'],
     // On hold, which still takes tasks.
     ['Bikes', 'bikes', 'Bikes'],
+    ['Reading', 'reading', 'Reading'],
   ])('creates at the end of the project %s', (ref, id, path) => {
     const { task } = evaluate(createTask, { name: 'x', project: ref })
 
@@ -344,7 +349,11 @@ describe('createTask', () => {
       '"Home/Shopping", "Work/Shopping"',
     ],
     [{ project: 'Taxes' }, 'OmniFocusProjectClosed', '"Taxes" is completed'],
-    [{ project: 'Cello' }, 'OmniFocusProjectClosed', '"Cello" is dropped'],
+    [
+      { project: 'Cello' },
+      'OmniFocusProjectClosed',
+      '"Cello" is dropped, so a task added to it would be dropped already. The OmniFocus project "Cello" is completed',
+    ],
   ])('refuses %j before creating anything', (fields, error, detail) => {
     const reply = evaluate(createTask, { name: 'x', ...fields })
 
