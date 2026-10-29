@@ -251,6 +251,7 @@ export let morning: FakeTag
 export let housekeeping: FakeProject
 // Every test starts from this database.
 export const reset = () => {
+  nextId = 1
   tasks = []
   ruleCalls = []
   moves = []
