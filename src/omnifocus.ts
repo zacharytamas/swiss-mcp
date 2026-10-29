@@ -25,6 +25,8 @@ import {
   CompleteResults,
   CompleteTasksParams,
   CreateTaskParams,
+  FindTasksParams,
+  FoundTasks,
   PerspectiveInfo,
   PerspectiveList,
   PerspectiveParams,
@@ -40,6 +42,7 @@ import {
 import {
   completeTasks,
   createTask,
+  findTasks,
   listPerspectives,
   listProjects,
   listTags,
@@ -50,6 +53,7 @@ import {
 import { perspectiveFilter } from './perspectives.ts'
 
 const OUTPUT_LIMIT = 4096
+const FIND_LIMIT = 100
 
 // Hands one OmniJS program to OmniFocus (Omni Automation, which needs OmniFocus Pro) and prints what it returns.
 export const JXA =
@@ -207,6 +211,13 @@ export const OmniFocusToolkit = Toolkit.make(
     'reads',
   ),
   omnifocusTool(
+    'omnifocus_find_tasks',
+    `Find OmniFocus tasks anywhere in the database, not just in one perspective: by part of the name, by project, by tag, or any mix of them. With none of them, every remaining task. Only remaining tasks (neither completed nor dropped) unless includeClosed. They come in OmniFocus database order (Inbox first), at most ${FIND_LIMIT}; omitted counts the rest. A project is listed as a task whose project is itself.`,
+    FindTasksParams,
+    FoundTasks,
+    'reads',
+  ),
+  omnifocusTool(
     'omnifocus_list_tags',
     'List your OmniFocus tags in OmniFocus order, each with its full path (parent first, e.g. Slot/Morning) and status. The OmniFocus task tools take a tag by id, by path, or by a name only one tag has.',
     Tool.EmptyParams,
@@ -332,6 +343,14 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
           ),
       omnifocus_perspective_tasks: ({ perspective }) =>
         perspectiveTasks(perspective).pipe(toFailure),
+      omnifocus_find_tasks: (p) =>
+        omnifocus
+          .evaluate(
+            'find tasks',
+            program(findTasks, { ...p, limit: FIND_LIMIT }),
+            FoundTasks,
+          )
+          .pipe(toFailure),
       omnifocus_list_tags: () =>
         omnifocus
           .evaluate('list tags', program(listTags, {}), TagList)

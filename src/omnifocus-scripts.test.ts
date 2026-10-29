@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
-import type { CompleteTasksParams } from './omnifocus-schema.ts'
+import type {
+  CompleteTasksParams,
+  FindTasksParams,
+} from './omnifocus-schema.ts'
 import {
   completeTasks,
   createTask,
+  findTasks,
   listProjects,
   listTags,
   program,
@@ -738,6 +742,90 @@ describe('completeTasks', () => {
       id: task.id.primaryKey,
       deferDate: '2026-10-28 06:00',
       repeat: { rule: 'FREQ=DAILY' },
+    })
+  })
+})
+
+describe('findTasks', () => {
+  const find = (args: FindTasksParams, limit = 100) =>
+    evaluate(findTasks, { ...args, limit })
+  const names = (reply: { tasks: ReadonlyArray<{ name: string }> }) =>
+    reply.tasks.map((t) => t.name)
+
+  test('with nothing to match, every remaining task; closed ones only with includeClosed', () => {
+    existing({ name: 'Open' })
+    existing({ name: 'Done', taskStatus: Status.Completed })
+    existing({ name: 'Gave up', taskStatus: Status.Dropped })
+
+    expect(find({})).toEqual({
+      tasks: [expect.objectContaining({ name: 'Open' })],
+      omitted: 0,
+    })
+    expect(names(find({ includeClosed: true }))).toEqual([
+      'Open',
+      'Done',
+      'Gave up',
+    ])
+  })
+
+  test('text matches part of the name in any case', () => {
+    existing({ name: 'Take Ella out before bed' })
+    existing({ name: 'Bedtime story' })
+    existing({ name: 'Walk' })
+
+    expect(names(find({ text: 'BED' }))).toEqual([
+      'Take Ella out before bed',
+      'Bedtime story',
+    ])
+  })
+
+  test('a tag matches the tags nested under it, and a name matches every tag that has it', () => {
+    existing({ name: 'Stretch', tags: [morning] })
+    const evenings = tags.filter((t) => t.name === 'Evening')
+    existing({ name: 'Read', tags: evenings.slice(0, 1) })
+    existing({ name: 'Log off', tags: evenings.slice(1) })
+    existing({ name: 'Untagged' })
+
+    expect(names(find({ tag: 'Slot' }))).toEqual(['Stretch', 'Read'])
+    expect(names(find({ tag: 'Evening' }))).toEqual(['Read', 'Log off'])
+    expect(names(find({ tag: 'Slot/Evening' }))).toEqual(['Read'])
+  })
+
+  test('a project matches closed projects too, every project with that name, and combines with the rest', () => {
+    const at = (id: string) =>
+      projects.find((p) => p.id.primaryKey === id) ?? null
+    existing({ name: 'Home list', containingProject: at('home-shopping') })
+    existing({ name: 'Work list', containingProject: at('work-shopping') })
+    existing({ name: 'File taxes', containingProject: at('taxes') })
+    existing({
+      name: 'Home tea',
+      containingProject: at('home-shopping'),
+      taskStatus: Status.Completed,
+    })
+
+    expect(names(find({ project: 'Shopping' }))).toEqual([
+      'Home list',
+      'Work list',
+    ])
+    expect(names(find({ project: 'Taxes' }))).toEqual(['File taxes'])
+    expect(
+      names(
+        find({ project: 'Home/Shopping', text: 'tea', includeClosed: true }),
+      ),
+    ).toEqual(['Home tea'])
+  })
+
+  test('an unknown project or tag is refused rather than finding nothing', () => {
+    expect(find({ project: 'Nope' })._tag).toBe('OmniFocusProjectNotFound')
+    expect(find({ tag: 'Nope' })._tag).toBe('OmniFocusTagNotFound')
+  })
+
+  test('lists at most the limit and counts the rest', () => {
+    for (const name of ['a', 'b', 'c']) existing({ name })
+
+    expect(find({}, 2)).toMatchObject({
+      tasks: [{ name: 'a' }, { name: 'b' }],
+      omitted: 1,
     })
   })
 })
