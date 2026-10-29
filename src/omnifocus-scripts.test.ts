@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
+import type { CompleteTasksParams } from './omnifocus-schema.ts'
 import {
-  completeTask,
+  completeTasks,
   createTask,
   listProjects,
   listTags,
@@ -569,9 +570,10 @@ describe('updateTask', () => {
   })
 })
 
-describe('completeTask', () => {
-  const daily = () =>
+describe('completeTasks', () => {
+  const daily = (name = 'Existing') =>
     existing({
+      name,
       deferDate: local(2026, 10, 27, 6, 0),
       repetitionRule: new FakeRule(
         'FREQ=DAILY',
@@ -581,35 +583,70 @@ describe('completeTask', () => {
         null,
       ),
     })
+  const complete = (...items: CompleteTasksParams['tasks']) =>
+    evaluate(completeTasks, { tasks: items })
 
   test('completes the occurrence the caller saw and returns the next one', () => {
     const task = daily()
 
-    const reply = evaluate(completeTask, {
+    const [result] = complete({
       id: task.id.primaryKey,
       deferDate: '2026-10-27 06:00',
-    })
+    }).results
 
-    expect(reply.completed).toMatchObject({
+    expect(result.id).toBe(task.id.primaryKey)
+    expect(result.completed).toMatchObject({
       status: 'Completed',
       deferDate: '2026-10-27 06:00',
     })
-    expect(reply.completed.id).not.toBe(task.id.primaryKey)
-    expect(reply.next).toMatchObject({
+    expect(result.completed.id).not.toBe(task.id.primaryKey)
+    expect(result.next).toMatchObject({
       id: task.id.primaryKey,
       status: 'Available',
       deferDate: '2026-10-28 06:00',
     })
   })
 
+  test('completes every task given, and answers in the order given', () => {
+    const stretch = daily('Stretch')
+    const pack = existing({ name: 'Pack bag' })
+    const shoes = existing({ name: 'Shoes on' })
+
+    const reply = complete(
+      { id: shoes.id.primaryKey },
+      { id: stretch.id.primaryKey, deferDate: '2026-10-27 06:00' },
+      { id: pack.id.primaryKey, deferDate: null },
+    )
+
+    expect(
+      reply.results.map((r: { id: string; completed: { status: string } }) => [
+        r.id,
+        r.completed.status,
+      ]),
+    ).toEqual([
+      [shoes.id.primaryKey, 'Completed'],
+      [stretch.id.primaryKey, 'Completed'],
+      [pack.id.primaryKey, 'Completed'],
+    ])
+    expect(stretch.deferDate).toEqual(local(2026, 10, 28, 6, 0))
+  })
+
+  test('a repeating task without a deferDate changes nothing, and the refusal gives the deferDate it is on now', () => {
+    const task = daily('Stretch')
+
+    expect(complete({ id: task.id.primaryKey })).toEqual({
+      _tag: 'OmniFocusOccurrenceRequired',
+      message:
+        '"Stretch" repeats, so give the deferDate you saw for it: 2026-10-27 06:00 if you mean the occurrence it is on now. Nothing changed.',
+    })
+    expect(task.deferDate).toEqual(local(2026, 10, 27, 6, 0))
+  })
+
   test('changes nothing once the task has moved on from the deferDate the caller saw', () => {
     const task = daily()
-    evaluate(completeTask, {
-      id: task.id.primaryKey,
-      deferDate: '2026-10-27 06:00',
-    })
+    complete({ id: task.id.primaryKey, deferDate: '2026-10-27 06:00' })
 
-    const reply = evaluate(completeTask, {
+    const reply = complete({
       id: task.id.primaryKey,
       deferDate: '2026-10-27 06:00',
     })
@@ -617,41 +654,68 @@ describe('completeTask', () => {
     expect(reply).toEqual({
       _tag: 'OmniFocusOccurrenceMoved',
       message:
-        '"Existing" is now deferred to 2026-10-28 06:00, not 2026-10-27 06:00, so the occurrence you saw was probably already completed. Nothing changed; read the task again before completing it.',
+        '"Existing" is now deferred to 2026-10-28 06:00, not 2026-10-27 06:00, so the occurrence you saw was probably already completed; read the task again before completing it. Nothing changed.',
     })
     expect(task.deferDate).toEqual(local(2026, 10, 28, 6, 0))
+  })
+
+  test('one task that cannot be completed stops the whole batch, and the refusal names every such task', () => {
+    const fine = existing({ name: 'Fine' })
+    const moved = daily('Moved')
+    const plain = existing({ name: 'Plain' })
+
+    const reply = complete(
+      { id: fine.id.primaryKey },
+      { id: moved.id.primaryKey, deferDate: '2026-10-26 06:00' },
+      { id: 'gone' },
+      { id: plain.id.primaryKey, skip: true },
+    )
+
+    expect(reply._tag).toBe('OmniFocusOccurrenceMoved')
+    expect(reply.message).toBe(
+      '3 of the 4 tasks can\'t be completed, so nothing changed. OmniFocusOccurrenceMoved: "Moved" is now deferred to 2026-10-27 06:00, not 2026-10-26 06:00, so the occurrence you saw was probably already completed; read the task again before completing it. OmniFocusTaskNotFound: No OmniFocus task has the id "gone". OmniFocusNotRepeating: "Plain" does not repeat, so it has no occurrence to skip.',
+    )
+    expect([fine, moved, plain].map((t) => t.taskStatus)).toEqual([
+      Status.Available,
+      Status.Available,
+      Status.Available,
+    ])
+    expect(moved.deferDate).toEqual(local(2026, 10, 27, 6, 0))
+  })
+
+  test('a task listed twice is refused, since a repeating one would move on twice', () => {
+    const task = daily()
+
+    const reply = complete(
+      { id: task.id.primaryKey, deferDate: '2026-10-27 06:00' },
+      { id: task.id.primaryKey, deferDate: '2026-10-27 06:00' },
+    )
+
+    expect(reply._tag).toBe('OmniFocusTaskListedTwice')
+    expect(task.deferDate).toEqual(local(2026, 10, 27, 6, 0))
   })
 
   test('compares a missing deferDate as null', () => {
     const task = existing()
 
     expect(
-      evaluate(completeTask, {
-        id: task.id.primaryKey,
-        deferDate: '2026-10-27 06:00',
-      })._tag,
+      complete({ id: task.id.primaryKey, deferDate: '2026-10-27 06:00' })._tag,
     ).toBe('OmniFocusOccurrenceMoved')
     expect(
-      evaluate(completeTask, { id: task.id.primaryKey, deferDate: null })
-        .completed.status,
+      complete({ id: task.id.primaryKey, deferDate: null }).results[0].completed
+        .status,
     ).toBe('Completed')
   })
 
   test('a task that does not repeat has no next occurrence, and completing it again changes nothing', () => {
     const task = existing()
 
-    const first = evaluate(completeTask, {
-      id: task.id.primaryKey,
-      deferDate: null,
-    })
-    const again = evaluate(completeTask, {
-      id: task.id.primaryKey,
-      deferDate: null,
-    })
+    const first = complete({ id: task.id.primaryKey })
+    const again = complete({ id: task.id.primaryKey })
 
     expect(first).toEqual(again)
-    expect(first.next).toBeNull()
-    expect(first.completed).toMatchObject({
+    expect(first.results[0].next).toBeNull()
+    expect(first.results[0].completed).toMatchObject({
       id: task.id.primaryKey,
       status: 'Completed',
     })
@@ -660,34 +724,21 @@ describe('completeTask', () => {
   test('skip drops only this occurrence of a repeating task', () => {
     const task = daily()
 
-    const reply = evaluate(completeTask, {
+    const [result] = complete({
       id: task.id.primaryKey,
       deferDate: '2026-10-27 06:00',
       skip: true,
-    })
+    }).results
 
-    expect(reply.completed).toMatchObject({
+    expect(result.completed).toMatchObject({
       status: 'Dropped',
       deferDate: '2026-10-27 06:00',
     })
-    expect(reply.next).toMatchObject({
+    expect(result.next).toMatchObject({
       id: task.id.primaryKey,
       deferDate: '2026-10-28 06:00',
       repeat: { rule: 'FREQ=DAILY' },
     })
-  })
-
-  test('skip on a task that does not repeat changes nothing', () => {
-    const task = existing()
-
-    const reply = evaluate(completeTask, {
-      id: task.id.primaryKey,
-      deferDate: null,
-      skip: true,
-    })
-
-    expect(reply._tag).toBe('OmniFocusNotRepeating')
-    expect(task.taskStatus).toBe(Status.Available)
   })
 })
 

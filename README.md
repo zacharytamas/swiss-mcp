@@ -59,15 +59,15 @@ Measured on Due 26.4.4:
 | `omnifocus_list_projects`     | List projects with their full paths (`Domestic/Housekeeping`) and status                                                                  |
 | `omnifocus_create_task`       | Add a task to a `project`, or to the Inbox without one (`name`, `note`, `tags`, `deferDate`, `dueDate`, `repeat`)                         |
 | `omnifocus_update_task`       | Change a task by `id`; leave a field out to keep it; `project` moves it; `clear` removes a date, the repeat or the project (to the Inbox) |
-| `omnifocus_complete_task`     | Complete the occurrence whose `deferDate` you saw, or with `skip` drop just that occurrence                                               |
+| `omnifocus_complete_tasks`    | Complete one or more tasks, or with `skip` drop just an occurrence; a repeating task needs the `deferDate` you saw; all or nothing        |
 
 ### How it works
 
-The server runs `osascript -l JavaScript`, which hands an OmniJS program to OmniFocus with `evaluateJavascript`. Each program is a TypeScript function in `src/omnifocus-scripts.ts`, sent as source text with its arguments as one JSON literal, and its JSON answer is decoded with an Effect Schema. Calls run one at a time and time out after 30 seconds. Failures come back as tagged errors (`OmniFocusFailed`, `OmniFocusTimedOut`, `OmniFocusOutputInvalid`, `OmniFocusTaskNotFound`, `OmniFocusTagNotFound`, `OmniFocusTagAmbiguous`, `OmniFocusProjectNotFound`, `OmniFocusProjectAmbiguous`, `OmniFocusProjectClosed`, `OmniFocusTaskIsProject`, `OmniFocusRepeatInvalid`, `OmniFocusNotRepeating`, `OmniFocusOccurrenceMoved`, `OmniFocusPerspectiveNotFound`, `OmniFocusPerspectiveAmbiguous`, `OmniFocusPerspectiveUnsupported`). See `src/omnifocus.ts`.
+The server runs `osascript -l JavaScript`, which hands an OmniJS program to OmniFocus with `evaluateJavascript`. Each program is a TypeScript function in `src/omnifocus-scripts.ts`, sent as source text with its arguments as one JSON literal, and its JSON answer is decoded with an Effect Schema. Calls run one at a time and time out after 30 seconds. Failures come back as tagged errors (`OmniFocusFailed`, `OmniFocusTimedOut`, `OmniFocusOutputInvalid`, `OmniFocusTaskNotFound`, `OmniFocusTagNotFound`, `OmniFocusTagAmbiguous`, `OmniFocusProjectNotFound`, `OmniFocusProjectAmbiguous`, `OmniFocusProjectClosed`, `OmniFocusTaskIsProject`, `OmniFocusRepeatInvalid`, `OmniFocusNotRepeating`, `OmniFocusOccurrenceMoved`, `OmniFocusOccurrenceRequired`, `OmniFocusTaskListedTwice`, `OmniFocusPerspectiveNotFound`, `OmniFocusPerspectiveAmbiguous`, `OmniFocusPerspectiveUnsupported`). See `src/omnifocus.ts`.
 
 A perspective's tasks are worked out in `src/perspectives.ts`. One call reads every remaining task, the tags, and each custom perspective's filter rules, and the rules are evaluated the way OmniFocus does: a tag also matches the tags nested under it, and a rule whose tags were all deleted is ignored.
 
-What a task means is left to OmniFocus. `status` is OmniFocus's own task status. A date without a time gets the default start or due time from OmniFocus's settings. A repeat is an OmniFocus repetition rule, and any field you leave out gets OmniFocus's default. Completing a repeating task twice moves it on twice, so `omnifocus_complete_task` takes the `deferDate` you saw and changes nothing if the task has moved on since. No tool creates tags, projects or perspectives or deletes tasks.
+What a task means is left to OmniFocus. `status` is OmniFocus's own task status. A date without a time gets the default start or due time from OmniFocus's settings. A repeat is an OmniFocus repetition rule, and any field you leave out gets OmniFocus's default. Completing a repeating task twice moves it on twice, so `omnifocus_complete_tasks` takes the `deferDate` you saw for a repeating task and changes nothing if the task has moved on since. It checks every task before completing any, so a refused call changes nothing. No tool creates tags, projects or perspectives or deletes tasks.
 
 ### Setup
 
@@ -90,7 +90,7 @@ Measured on OmniFocus 4.9.3:
 - `omnifocus_perspective_tasks` lists tasks in database order (Inbox first), not in the perspective's sort order, and without its grouping.
 - Only these perspective rules are evaluated: availability (available or remaining), has any or all of some tags, has no children, has a defer date, nested all/any/none groups, and disabled rules. A perspective with any other rule is unsupported, and so is one that could show completed or dropped items (such as the Completed and Changed perspectives). `omnifocus_list_perspectives` says why.
 - Perspectives are read-only by design. No tool creates or edits one, and built-in perspectives such as Forecast aren't available.
-- `omnifocus_complete_task` tells occurrences apart by `deferDate`, so for a repeating task without a defer date it can't stop a second completion.
+- `omnifocus_complete_tasks` tells occurrences apart by `deferDate`, so for a repeating task without a defer date it can't stop a second completion.
 - Tags must already exist. A tag is given by its id, by its full path or by a name only one tag has.
 - Projects must already exist, and are given the same way, by id, by full path (folders first) or by a name only one project has. A completed or dropped project takes no tasks: OmniFocus would reopen a completed one, and a task added to a dropped one is dropped. An on-hold project takes them, and they are Blocked.
 

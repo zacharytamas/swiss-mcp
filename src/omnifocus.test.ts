@@ -285,7 +285,7 @@ describe('OmniFocus tools over MCP', () => {
       ['omnifocus_list_projects', true, false, false],
       ['omnifocus_create_task', false, false, true],
       ['omnifocus_update_task', false, true, true],
-      ['omnifocus_complete_task', false, true, true],
+      ['omnifocus_complete_tasks', false, true, true],
     ])
   })
 
@@ -442,21 +442,36 @@ describe('OmniFocus tools over MCP', () => {
     })
   })
 
-  test('the deferDate a complete is checked against stays required, and its null still means no defer date', async () => {
-    await callTool(
-      'omnifocus_complete_task',
-      { id: 't1', deferDate: null, skip: null },
-      { reply: JSON.stringify({ completed: MORNING_TASK, next: null }) },
-    )
-    expect((await sent()).args).toEqual({ id: 't1', deferDate: null })
+  test('a complete sends each task with its deferDate, keeps null as no defer date, and leaves a missing one out', async () => {
+    const result = { id: 't1', completed: MORNING_TASK, next: null }
 
-    const missing = await request('tools/call', {
-      name: 'omnifocus_complete_task',
-      arguments: { id: 't1' },
-    })
-    expect(missing.error?.message ?? missing.result?.content[0].text).toContain(
-      'deferDate',
+    const reply = await callTool(
+      'omnifocus_complete_tasks',
+      {
+        tasks: [
+          { id: 't1', deferDate: null, skip: null },
+          { id: 't2', deferDate: '2026-10-27 06:00', skip: true },
+          { id: 't3' },
+        ],
+      },
+      { reply: JSON.stringify({ results: [result] }) },
     )
+
+    expect(reply.result.structuredContent).toEqual({ results: [result] })
+    expect((await sent()).args).toEqual({
+      tasks: [
+        { id: 't1', deferDate: null },
+        { id: 't2', deferDate: '2026-10-27 06:00', skip: true },
+        { id: 't3' },
+      ],
+    })
+  })
+
+  test('a complete with no tasks is rejected before OmniFocus is called', async () => {
+    const reply = await callTool('omnifocus_complete_tasks', { tasks: [] })
+
+    expect(reply.error ?? reply.result.isError).toBeTruthy()
+    expect(await Bun.file(join(dir, 'source.js')).exists()).toBe(false)
   })
 
   test("a script's refusal is a tool error with its tag and message", async () => {
@@ -464,18 +479,14 @@ describe('OmniFocus tools over MCP', () => {
       '"Stretch" is now deferred to 2026-10-28 06:00, not 2026-10-27 06:00.'
 
     const reply = await callTool(
-      'omnifocus_complete_task',
-      { id: 't1', deferDate: '2026-10-27 06:00' },
+      'omnifocus_complete_tasks',
+      { tasks: [{ id: 't1', deferDate: '2026-10-27 06:00' }] },
       { reply: JSON.stringify({ _tag: 'OmniFocusOccurrenceMoved', message }) },
     )
 
     expect(failure(reply)).toEqual({
       error: 'OmniFocusOccurrenceMoved',
       message,
-    })
-    expect((await sent()).args).toEqual({
-      id: 't1',
-      deferDate: '2026-10-27 06:00',
     })
   })
 

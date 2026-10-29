@@ -1,5 +1,5 @@
 import type {
-  CompleteTaskParams,
+  CompleteTasksParams,
   CreateTaskParams,
   ScriptFailure,
   UpdateTaskParams,
@@ -517,43 +517,88 @@ export const updateTask: Script<UpdateTaskParams> = (args, omni) => {
   return { task: omni.task(task) }
 }
 
-// Completing a repeating task twice moves it on twice (measured on OmniFocus 4.9.3), so the caller says which
-// occurrence it means by the deferDate it saw, and a task that has moved on since is left alone.
-export const completeTask: Script<CompleteTaskParams> = (args, omni) => {
-  const task = omni.find(args.id)
-  const current = omni.local(task.deferDate)
-  if (current !== args.deferDate) {
-    return omni.fail(
-      'OmniFocusOccurrenceMoved',
-      `"${task.name}" is now deferred to ${current ?? 'no date'}, not ${args.deferDate ?? 'no date'}, so the occurrence you saw was probably already completed. Nothing changed; read the task again before completing it.`,
-    )
-  }
-  const { Dropped } = Task.Status
-
-  if (args.skip === true) {
-    if (task.repetitionRule === null) {
-      return omni.fail(
-        'OmniFocusNotRepeating',
-        `"${task.name}" does not repeat, so it has no occurrence to skip. Nothing changed.`,
+// Completing a repeating task twice moves it on twice (measured on OmniFocus 4.9.3), so for a repeating task the caller
+// says which occurrence it saw by its deferDate. Every task is checked before any changes, so a refused batch changes
+// nothing, and the refusal names every task that can't be completed.
+export const completeTasks: Script<CompleteTasksParams> = (args, omni) => {
+  const listed = new Set<string>()
+  const check = (item: CompleteTasksParams['tasks'][number]) => {
+    if (listed.has(item.id)) {
+      omni.fail(
+        'OmniFocusTaskListedTwice',
+        `The task "${item.id}" is listed more than once; completing a repeating task twice would move it on twice.`,
       )
     }
-    const before = new Set(flattenedTasks.map((t) => t.id.primaryKey))
-    task.drop(false)
-    const dropped =
-      flattenedTasks.find((t) => !before.has(t.id.primaryKey)) ??
-      (task.taskStatus === Dropped ? task : null)
-    return {
-      completed: dropped === null ? null : omni.task(dropped),
-      next: task.taskStatus === Dropped ? null : omni.task(task),
+    listed.add(item.id)
+    const task = omni.find(item.id)
+    const current = omni.local(task.deferDate)
+    if (item.deferDate === undefined && task.repetitionRule !== null) {
+      omni.fail(
+        'OmniFocusOccurrenceRequired',
+        `"${task.name}" repeats, so give the deferDate you saw for it: ${current === null ? 'null' : current} if you mean the occurrence it is on now.`,
+      )
     }
+    if (item.deferDate !== undefined && item.deferDate !== current) {
+      omni.fail(
+        'OmniFocusOccurrenceMoved',
+        `"${task.name}" is now deferred to ${current ?? 'no date'}, not ${item.deferDate ?? 'no date'}, so the occurrence you saw was probably already completed; read the task again before completing it.`,
+      )
+    }
+    if (item.skip === true && task.repetitionRule === null) {
+      omni.fail(
+        'OmniFocusNotRepeating',
+        `"${task.name}" does not repeat, so it has no occurrence to skip.`,
+      )
+    }
+    return task
   }
 
-  if (task.completed && task.repetitionRule === null) {
-    return { completed: omni.task(task), next: null }
+  const problems: Array<ScriptFailure> = []
+  const checked = args.tasks.flatMap((item) => {
+    try {
+      return [{ item, task: check(item) }]
+    } catch (e) {
+      if (!(e instanceof omni.Refusal)) throw e
+      problems.push(e.failure)
+      return []
+    }
+  })
+  const [first] = problems
+  if (first !== undefined) {
+    return omni.fail(
+      first._tag,
+      problems.length === 1
+        ? `${first.message} Nothing changed.`
+        : `${problems.length} of the ${args.tasks.length} tasks can't be completed, so nothing changed. ${problems.map((p) => `${p._tag}: ${p.message}`).join(' ')}`,
+    )
   }
-  const done = task.markComplete()
+
+  const { Dropped } = Task.Status
+  const complete = (task: OFTask, skip: boolean) => {
+    if (skip) {
+      const before = new Set(flattenedTasks.map((t) => t.id.primaryKey))
+      task.drop(false)
+      const dropped =
+        flattenedTasks.find((t) => !before.has(t.id.primaryKey)) ??
+        (task.taskStatus === Dropped ? task : null)
+      return {
+        completed: dropped === null ? null : omni.task(dropped),
+        next: task.taskStatus === Dropped ? null : omni.task(task),
+      }
+    }
+    if (task.completed && task.repetitionRule === null) {
+      return { completed: omni.task(task), next: null }
+    }
+    const done = task.markComplete()
+    return {
+      completed: omni.task(done),
+      next: done.id.primaryKey === task.id.primaryKey ? null : omni.task(task),
+    }
+  }
   return {
-    completed: omni.task(done),
-    next: done.id.primaryKey === task.id.primaryKey ? null : omni.task(task),
+    results: checked.map(({ item, task }) => ({
+      id: item.id,
+      ...complete(task, item.skip === true),
+    })),
   }
 }
