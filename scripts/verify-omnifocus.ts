@@ -366,13 +366,19 @@ if (write) {
     const overlap = await call('omnifocus_complete_tasks', {
       tasks: [{ id }, { id: childId }],
     })
-    report(
-      `omnifocus_complete_tasks on a group and a task inside it (${overlap.ms} ms)`,
+    const overlapWhy =
       overlap.error?.error === 'OmniFocusTasksOverlap'
         ? undefined
-        : `expected OmniFocusTasksOverlap, got ${JSON.stringify(overlap.error ?? overlap.content)}`,
+        : `expected OmniFocusTasksOverlap, got ${JSON.stringify(overlap.error ?? overlap.content)}`
+    report(
+      `omnifocus_complete_tasks on a group and a task inside it (${overlap.ms} ms)`,
+      overlapWhy,
       overlap.error,
     )
+    if (overlapWhy)
+      throw new Error(
+        'the overlapping complete was not refused, so the write steps after it were skipped',
+      )
 
     const plain = await step(
       'omnifocus_create_task',
