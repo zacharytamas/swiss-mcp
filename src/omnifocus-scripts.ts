@@ -62,6 +62,8 @@ interface OFTask {
   readonly effectiveDeferDate: Date | null
   readonly tags: ReadonlyArray<OFTag>
   readonly children: ReadonlyArray<OFTask>
+  // For a task directly in a project, the project's root task.
+  readonly parent: OFTask | null
   // For a project's own root task, the project itself.
   readonly containingProject: OFProject | null
   // Only on a project's own root task, which shares the project's id.
@@ -669,16 +671,25 @@ export const updateTask: Script<UpdateTaskParams> = (args, omni) => {
 // says which occurrence it saw by its deferDate. Every task is checked before any changes, so a refused batch changes
 // nothing, and the refusal names every task that can't be completed.
 export const completeTasks: Script<CompleteTasksParams> = (args, omni) => {
-  const listed = new Set<string>()
-  const check = (item: CompleteTasksParams['tasks'][number]) => {
-    if (listed.has(item.id)) {
+  // Completing the last task inside a group or project can complete that too (measured on OmniFocus 4.9.3), so a
+  // repeating one listed with a task inside it would move on twice.
+  const ids = args.tasks.map((item) => item.id)
+  const check = (item: CompleteTasksParams['tasks'][number], at: number) => {
+    if (ids.indexOf(item.id) !== at) {
       omni.fail(
-        'OmniFocusTaskListedTwice',
+        'OmniFocusTasksOverlap',
         `The task "${item.id}" is listed more than once; completing a repeating task twice would move it on twice.`,
       )
     }
-    listed.add(item.id)
     const task = omni.find(item.id)
+    for (let up = task.parent; up; up = up.parent) {
+      if (ids.includes(up.id.primaryKey)) {
+        omni.fail(
+          'OmniFocusTasksOverlap',
+          `"${task.name}" is inside "${up.name}", which is also listed, and completing it can complete "${up.name}" too. Complete "${up.name}" in a separate call if it is still open after.`,
+        )
+      }
+    }
     const current = omni.local(task.deferDate)
     if (item.deferDate === undefined && task.repetitionRule !== null) {
       omni.fail(
@@ -702,9 +713,9 @@ export const completeTasks: Script<CompleteTasksParams> = (args, omni) => {
   }
 
   const problems: Array<ScriptFailure> = []
-  const checked = args.tasks.flatMap((item) => {
+  const checked = args.tasks.flatMap((item, at) => {
     try {
-      return [{ item, task: check(item) }]
+      return [{ item, task: check(item, at) }]
     } catch (e) {
       if (!(e instanceof omni.Refusal)) throw e
       problems.push(e.failure)

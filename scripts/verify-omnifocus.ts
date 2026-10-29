@@ -2,8 +2,8 @@
 // Default: read-only (list perspectives, tags and projects, each supported perspective's tasks, and find tasks).
 // --write: create a throwaway project and a throwaway tag with a child, each twice to check a retry makes no second
 // one. In the project, create, update, complete and skip a throwaway repeating task, move it to the Inbox and back,
-// complete it with a second task in one call, and check a dropped throwaway project takes no task. Then delete every
-// task, project and tag with the throwaway names.
+// check a task and one inside it are refused together, complete it with a second task in one call, and check a
+// dropped throwaway project takes no task. Then delete every task, project and tag with the throwaway names.
 // A failed write step stops the ones after it, so nothing acts on a task the server returned wrongly.
 // --parity: compare each supported perspective's tasks with what OmniFocus renders for it in a temporary tab.
 type Item = Record<string, any>
@@ -128,9 +128,9 @@ console.log(
 await check('omnifocus_find_tasks', { includeClosed: true }, (c) =>
   !Array.isArray(c.tasks)
     ? 'no task list'
-    : c.tasks.length + c.omitted <=
+    : c.tasks.length + c.omitted <
         (remaining?.tasks.length ?? 0) + (remaining?.omitted ?? 0)
-      ? 'includeClosed found no more than the remaining tasks'
+      ? 'includeClosed found fewer than the remaining tasks'
       : undefined,
 )
 const sample: Item | undefined = remaining?.tasks.find(
@@ -359,6 +359,20 @@ if (write) {
           : undefined,
     )
 
+    const childId = await omnijs(
+      `((id, name) => JSON.stringify(new Task(name, Task.byIdentifier(id).ending).id.primaryKey))(${JSON.stringify(id)}, ${JSON.stringify(name)})`,
+    )
+    const overlap = await call('omnifocus_complete_tasks', {
+      tasks: [{ id }, { id: childId }],
+    })
+    report(
+      `omnifocus_complete_tasks on a group and a task inside it (${overlap.ms} ms)`,
+      overlap.error?.error === 'OmniFocusTasksOverlap'
+        ? undefined
+        : `expected OmniFocusTasksOverlap, got ${JSON.stringify(overlap.error ?? overlap.content)}`,
+      overlap.error,
+    )
+
     const plain = await step(
       'omnifocus_create_task',
       { name, project },
@@ -396,7 +410,7 @@ if (write) {
   const mine = () => flattenedProjects.filter((p) => projects.includes(p.name))
   const tagged = () => flattenedTags.filter((t) => t.name === tag)
   const deleted = { tasks: tasks().length, projects: mine().length, tags: tagged().length }
-  tasks().forEach((t) => deleteObject(t))
+  tasks().filter((t) => t.parent === null || t.parent.name !== name).forEach((t) => deleteObject(t))
   mine().forEach((p) => deleteObject(p))
   tagged().forEach((t) => deleteObject(t))
   return JSON.stringify({ deleted, left: { tasks: tasks().length, projects: mine().length, tags: tagged().length } })

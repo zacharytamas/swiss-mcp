@@ -267,7 +267,7 @@ export const OmniFocusToolkit = Toolkit.make(
   ),
   omnifocusTool(
     'omnifocus_complete_tasks',
-    "Complete one or more OmniFocus tasks, or with skip drop just the current occurrence of a repeating one. Every task is checked before any changes: if one can't be completed, nothing changes and the error names each one that can't. For a repeating task pass the deferDate a tool returned for it; if the task has moved on since (completed on another device, or by an earlier call), that is OmniFocusOccurrenceMoved, and leaving deferDate out is OmniFocusOccurrenceRequired. That check only looks at deferDate, so it can't tell apart occurrences of a repeating task that has no defer date. A task that does not repeat needs no deferDate, and completing it again changes nothing. A task listed twice is OmniFocusTaskListedTwice.",
+    "Complete one or more OmniFocus tasks, or with skip drop just the current occurrence of a repeating one. Every task is checked before any changes: if one can't be completed, nothing changes and the error names each one that can't. For a repeating task pass the deferDate a tool returned for it; if the task has moved on since (completed on another device, or by an earlier call), that is OmniFocusOccurrenceMoved, and leaving deferDate out is OmniFocusOccurrenceRequired. That check only looks at deferDate, so it can't tell apart occurrences of a repeating task that has no defer date. A task that does not repeat needs no deferDate, and completing it again changes nothing. A task listed twice, or with a group or project it is inside, is OmniFocusTasksOverlap, since completing it can complete that too.",
     CompleteTasksParams,
     CompleteResults,
     'changes',

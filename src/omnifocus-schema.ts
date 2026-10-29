@@ -12,7 +12,7 @@ import {
   OmniFocusTagAmbiguous,
   OmniFocusTagNotFound,
   OmniFocusTaskIsProject,
-  OmniFocusTaskListedTwice,
+  OmniFocusTasksOverlap,
   OmniFocusTaskNotFound,
   OmniFocusUpdateConflict,
 } from './omnifocus-errors.ts'
@@ -194,7 +194,7 @@ export const ScriptFailure = Schema.Union([
   OmniFocusUpdateConflict,
   OmniFocusOccurrenceMoved,
   OmniFocusOccurrenceRequired,
-  OmniFocusTaskListedTwice,
+  OmniFocusTasksOverlap,
   OmniFocusFolderNotFound,
   OmniFocusFolderAmbiguous,
 ])
