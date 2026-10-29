@@ -145,6 +145,7 @@ class FakeTask {
   plannedDate: Date | null = null
   tags: Array<FakeTag> = []
   children: Array<FakeTask> = []
+  parent: FakeTask | null = null
   containingProject: FakeProject | null = null
   project: FakeProject | null = null
   repetitionRule: FakeRule | null = null
@@ -746,8 +747,26 @@ describe('completeTasks', () => {
       { id: task.id.primaryKey, deferDate: '2026-10-27 06:00' },
     )
 
-    expect(reply._tag).toBe('OmniFocusTaskListedTwice')
+    expect(reply._tag).toBe('OmniFocusTasksOverlap')
     expect(task.deferDate).toEqual(local(2026, 10, 27, 6, 0))
+  })
+
+  test('a task listed with a group it is inside is refused, since completing it can complete the group', () => {
+    const group = daily('Morning routine')
+    const step = existing({ name: 'Brush teeth', parent: group })
+    const nested = existing({ name: 'Floss', parent: step })
+
+    const reply = complete(
+      { id: group.id.primaryKey, deferDate: '2026-10-27 06:00' },
+      { id: nested.id.primaryKey },
+    )
+
+    expect(reply).toEqual({
+      _tag: 'OmniFocusTasksOverlap',
+      message:
+        '"Floss" is inside "Morning routine", which is also listed, and completing it can complete "Morning routine" too. Complete "Morning routine" in a separate call if it is still open after. Nothing changed.',
+    })
+    expect(group.deferDate).toEqual(local(2026, 10, 27, 6, 0))
   })
 
   test('compares a missing deferDate as null', () => {

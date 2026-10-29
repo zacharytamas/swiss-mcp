@@ -94,8 +94,8 @@ export class OmniFocusOccurrenceRequired extends Schema.TaggedError<OmniFocusOcc
   fields,
 ) {}
 
-export class OmniFocusTaskListedTwice extends Schema.TaggedError<OmniFocusTaskListedTwice>()(
-  'OmniFocusTaskListedTwice',
+export class OmniFocusTasksOverlap extends Schema.TaggedError<OmniFocusTasksOverlap>()(
+  'OmniFocusTasksOverlap',
   fields,
 ) {}
 
@@ -122,7 +122,7 @@ export type OmniFocusScriptError =
   | OmniFocusUpdateConflict
   | OmniFocusOccurrenceMoved
   | OmniFocusOccurrenceRequired
-  | OmniFocusTaskListedTwice
+  | OmniFocusTasksOverlap
   | OmniFocusFolderNotFound
   | OmniFocusFolderAmbiguous
 
