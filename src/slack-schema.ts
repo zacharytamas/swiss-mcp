@@ -16,6 +16,13 @@ const TextObject = Schema.Struct({
 })
 type TextObject = typeof TextObject.Type
 
+const Style = Schema.Struct({
+  bold: Schema.optional(Schema.Boolean),
+  italic: Schema.optional(Schema.Boolean),
+  strike: Schema.optional(Schema.Boolean),
+  code: Schema.optional(Schema.Boolean),
+})
+
 export interface RawBlock {
   readonly type: string
   readonly text?: string | TextObject | undefined
@@ -33,6 +40,7 @@ export interface RawBlock {
   readonly timestamp?: number | undefined
   readonly alt_text?: string | undefined
   readonly title?: string | TextObject | undefined
+  readonly style?: typeof Style.Type | undefined
 }
 const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
   type: Schema.String,
@@ -57,6 +65,7 @@ const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
   timestamp: Schema.optional(Schema.Number),
   alt_text: Schema.optional(Schema.String),
   title: Schema.optional(Schema.Union([Schema.String, TextObject])),
+  style: Schema.optional(Style),
 })
 const Blocks = Loose(Schema.Array(RawBlock))
 const Content = {
