@@ -401,6 +401,60 @@ const channels: Record<string, Raw[]> = {
       user: 'UANN',
       text: 'typed `&lt;https://ex.test/a|literal&gt;` and `&amp;lt;b&amp;gt;`\n```&lt;mailto:a@b.c&gt;```',
     },
+    {
+      ts: ts(3, 35),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'rich_text',
+          elements: [
+            {
+              type: 'rich_text_section',
+              elements: [
+                { type: 'text', text: 'Total', style: { bold: true } },
+                { type: 'text', text: ' via ' },
+                { type: 'text', text: 'sum()', style: { code: true } },
+                { type: 'text', text: ', ' },
+                {
+                  type: 'text',
+                  text: 'not',
+                  style: { italic: true, strike: true },
+                },
+                { type: 'text', text: ' ' },
+                { type: 'user', user_id: 'UME', style: { bold: true } },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      ts: ts(3, 36),
+      user: 'UANN',
+      text: '',
+      blocks: [
+        {
+          type: 'table',
+          rows: [
+            [
+              {
+                type: 'rich_text',
+                elements: [
+                  {
+                    type: 'rich_text_section',
+                    elements: [
+                      { type: 'text', text: 'Total', style: { bold: true } },
+                    ],
+                  },
+                ],
+              },
+              { type: 'raw_number', value: 42 },
+            ],
+          ],
+        },
+      ],
+    },
   ],
   CBUSY: [],
 }
@@ -924,6 +978,16 @@ describe('messages whose content is outside text', () => {
     expect(await textAt(ts(3, 34))).toBe(
       'typed `<https://ex.test/a|literal>` and `&lt;b&gt;`\n```\n<mailto:a@b.c>\n```',
     )
+  })
+
+  test('styled rich text keeps its bold, code, italic and strike', async () => {
+    expect(await textAt(ts(3, 35))).toBe(
+      '*Total* via `sum()`, _~not~_ *@Zach Tamas*',
+    )
+  })
+
+  test('a styled rich text table cell keeps its style', async () => {
+    expect(await textAt(ts(3, 36))).toBe('*Total* | 42')
   })
 })
 
