@@ -24,6 +24,10 @@ import {
 import {
   CompleteResults,
   CompleteTasksParams,
+  CreatedProject,
+  CreatedTag,
+  CreateProjectParams,
+  CreateTagParams,
   CreateTaskParams,
   FindTasksParams,
   FoundTasks,
@@ -41,6 +45,8 @@ import {
 } from './omnifocus-schema.ts'
 import {
   completeTasks,
+  createProject,
+  createTag,
   createTask,
   findTasks,
   listPerspectives,
@@ -232,8 +238,22 @@ export const OmniFocusToolkit = Toolkit.make(
     'reads',
   ),
   omnifocusTool(
+    'omnifocus_create_tag',
+    'Make an OmniFocus tag, at the end of the top-level tags or of the tags inside parent. If a tag with that name is already in that place, it is returned as it is with created false, so a retry makes no second one. Returns the tag with its full path, as omnifocus_list_tags lists it.',
+    CreateTagParams,
+    CreatedTag,
+    'adds',
+  ),
+  omnifocusTool(
+    'omnifocus_create_project',
+    "Make an active OmniFocus project at the end of the top level or of a folder that already exists, with OmniFocus's defaults for everything else. If an active or on-hold project with that name is already in that place, it is returned as it is with created false, so a retry makes no second one; a completed or dropped one doesn't count. Returns the project with its full path, as omnifocus_list_projects lists it.",
+    CreateProjectParams,
+    CreatedProject,
+    'adds',
+  ),
+  omnifocusTool(
     'omnifocus_create_task',
-    `Add a task to the end of an OmniFocus project, or to the Inbox when no project is given, as Quick Entry does. ${dates} Tags and projects must already exist; they are never created. A completed or dropped project is OmniFocusProjectClosed, since adding to it would reopen it or drop the task. ${repeats} ${stored}`,
+    `Add a task to the end of an OmniFocus project, or to the Inbox when no project is given, as Quick Entry does. ${dates} Tags and projects must already exist; omnifocus_create_tag and omnifocus_create_project make them. A completed or dropped project is OmniFocusProjectClosed, since adding to it would reopen it or drop the task. ${repeats} ${stored}`,
     CreateTaskParams,
     TaskResult,
     'adds',
@@ -358,6 +378,14 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
       omnifocus_list_projects: () =>
         omnifocus
           .evaluate('list projects', program(listProjects, {}), ProjectList)
+          .pipe(toFailure),
+      omnifocus_create_tag: (p) =>
+        omnifocus
+          .evaluate('create tag', program(createTag, p), CreatedTag)
+          .pipe(toFailure),
+      omnifocus_create_project: (p) =>
+        omnifocus
+          .evaluate('create project', program(createProject, p), CreatedProject)
           .pipe(toFailure),
       omnifocus_create_task: (p) =>
         omnifocus

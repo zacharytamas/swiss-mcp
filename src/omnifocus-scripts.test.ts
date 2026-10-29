@@ -6,6 +6,8 @@ import type {
 } from './omnifocus-schema.ts'
 import {
   completeTasks,
+  createProject,
+  createTag,
   createTask,
   findTasks,
   listProjects,
@@ -41,12 +43,20 @@ interface FakeTag {
   id: { primaryKey: string }
   name: string
   parent: FakeTag | null
+  readonly children: ReadonlyArray<FakeTag>
   status: object
 }
-const tag = (id: string, name: string, parent: FakeTag | null = null) => ({
+const tag = (
+  id: string,
+  name: string,
+  parent: FakeTag | null = null,
+): FakeTag => ({
   id: { primaryKey: id },
   name,
   parent,
+  get children() {
+    return tags.filter((t) => t.parent === this)
+  },
   status: enumValue('Tag.Status', 'Active'),
 })
 
@@ -58,12 +68,23 @@ const ProjectStatus = {
 }
 
 interface FakeFolder {
+  id: { primaryKey: string }
   name: string
   parent: FakeFolder | null
 }
+const folder = (
+  id: string,
+  name: string,
+  parent: FakeFolder | null = null,
+) => ({
+  id: { primaryKey: id },
+  name,
+  parent,
+})
 interface FakeProject {
   id: { primaryKey: string }
   name: string
+  note: string
   status: object
   parentFolder: FakeFolder | null
   ending: string
@@ -76,6 +97,7 @@ const project = (
 ) => ({
   id: { primaryKey: id },
   name,
+  note: '',
   status,
   parentFolder,
   ending: `${id}.ending`,
@@ -84,6 +106,7 @@ const project = (
 let tasks: Array<FakeTask> = []
 let tags: Array<FakeTag> = []
 let projects: Array<FakeProject> = []
+let folders: Array<FakeFolder> = []
 let moves: Array<[ReadonlyArray<string>, unknown]> = []
 let ruleCalls: Array<ReadonlyArray<unknown>> = []
 let nextId = 1
@@ -183,7 +206,19 @@ const globals = () => ({
       AnchorDateKey: Anchor,
     },
   ),
-  Project: { Status: ProjectStatus },
+  Tag: function (name: string, parent: FakeTag | null) {
+    const made = tag(`tag-${nextId++}`, name, parent)
+    tags.push(made)
+    return made
+  },
+  Project: Object.assign(
+    function (name: string, parentFolder: FakeFolder | null) {
+      const made = project(`project-${nextId++}`, name, parentFolder)
+      projects.push(made)
+      return made
+    },
+    { Status: ProjectStatus },
+  ),
   Perspective: { Custom: { all: [] } },
   get flattenedTasks() {
     return [...tasks]
@@ -193,6 +228,12 @@ const globals = () => ({
   },
   get flattenedProjects() {
     return [...projects]
+  },
+  get flattenedFolders() {
+    return [...folders]
+  },
+  get tags() {
+    return tags.filter((t) => t.parent === null)
   },
   inbox: { ending: 'inbox.ending' },
   moveTasks: (moved: ReadonlyArray<FakeTask>, position: unknown) => {
@@ -232,15 +273,25 @@ beforeEach(() => {
     tag('evening', 'Evening', slot),
     tag('evening2', 'Evening', tag('work', 'Work')),
   ]
-  const domestic = { name: 'Domestic', parent: null }
+  const domestic = folder('domestic', 'Domestic')
+  const home = folder('home', 'Home')
+  const work = folder('work', 'Work')
+  // Two folders named Lists.
+  folders = [
+    domestic,
+    home,
+    work,
+    folder('home-lists', 'Lists', home),
+    folder('work-lists', 'Lists', work),
+  ]
   housekeeping = project('housekeeping', 'Housekeeping', domestic)
   // Two projects named Garden: the top-level one is also a full path.
   projects = [
     housekeeping,
     project('garden', 'Garden'),
     project('domestic-garden', 'Garden', domestic),
-    project('home-shopping', 'Shopping', { name: 'Home', parent: null }),
-    project('work-shopping', 'Shopping', { name: 'Work', parent: null }),
+    project('home-shopping', 'Shopping', home),
+    project('work-shopping', 'Shopping', work),
     project('bikes', 'Bikes', null, ProjectStatus.OnHold),
     project('taxes', 'Taxes', null, ProjectStatus.Done),
     project('cello', 'Cello', null, ProjectStatus.Dropped),
@@ -746,6 +797,101 @@ describe('completeTasks', () => {
   })
 })
 
+describe('createTag', () => {
+  test('makes a top-level tag, or one inside a parent given by path, and answers with its full path', () => {
+    expect(evaluate(createTag, { name: 'Errand run' })).toMatchObject({
+      tag: { name: 'Errand run', path: 'Errand run', status: 'Active' },
+      created: true,
+    })
+    expect(
+      evaluate(createTag, { name: 'School run', parent: 'Slot' }),
+    ).toMatchObject({ tag: { path: 'Slot/School run' }, created: true })
+  })
+
+  test('a tag already in that place is returned as it is, so a retry makes no second one', () => {
+    const before = tags.length
+
+    expect(evaluate(createTag, { name: 'Morning', parent: 'Slot' })).toEqual({
+      tag: {
+        id: 'morning',
+        name: 'Morning',
+        path: 'Slot/Morning',
+        status: 'Active',
+      },
+      created: false,
+    })
+    expect(evaluate(createTag, { name: 'Morning' }).created).toBe(true)
+    expect(tags.length).toBe(before + 1)
+  })
+
+  test('an unknown or ambiguous parent makes nothing', () => {
+    const before = tags.length
+
+    expect(evaluate(createTag, { name: 'x', parent: 'Nope' })._tag).toBe(
+      'OmniFocusTagNotFound',
+    )
+    expect(evaluate(createTag, { name: 'x', parent: 'Evening' })._tag).toBe(
+      'OmniFocusTagAmbiguous',
+    )
+    expect(tags.length).toBe(before)
+  })
+})
+
+describe('createProject', () => {
+  test('makes a project at the top level, or in a folder given by path, with a note', () => {
+    expect(evaluate(createProject, { name: 'School run' })).toMatchObject({
+      project: { name: 'School run', path: 'School run', status: 'Active' },
+      created: true,
+    })
+    const reply = evaluate(createProject, {
+      name: 'Groceries',
+      folder: 'Home/Lists',
+      note: 'weekly',
+    })
+    expect(reply).toMatchObject({
+      project: { path: 'Home/Lists/Groceries' },
+      created: true,
+    })
+    expect(projects.at(-1)?.note).toBe('weekly')
+  })
+
+  test('an open project already in that folder is returned as it is; a completed one does not count', () => {
+    const before = projects.length
+
+    expect(
+      evaluate(createProject, { name: 'Housekeeping', folder: 'Domestic' }),
+    ).toEqual({
+      project: {
+        id: 'housekeeping',
+        name: 'Housekeeping',
+        path: 'Domestic/Housekeeping',
+        status: 'Active',
+      },
+      created: false,
+    })
+    expect(evaluate(createProject, { name: 'Bikes' }).created).toBe(false)
+    expect(evaluate(createProject, { name: 'Taxes' }).created).toBe(true)
+    expect(evaluate(createProject, { name: 'Housekeeping' }).created).toBe(true)
+    expect(projects.length).toBe(before + 2)
+  })
+
+  test('an unknown or ambiguous folder makes nothing', () => {
+    const before = projects.length
+
+    expect(evaluate(createProject, { name: 'x', folder: 'Nope' })).toEqual({
+      _tag: 'OmniFocusFolderNotFound',
+      message:
+        'No OmniFocus folder has the id, path or name "Nope". Folders are never created. Nothing changed.',
+    })
+    expect(evaluate(createProject, { name: 'x', folder: 'Lists' })).toEqual({
+      _tag: 'OmniFocusFolderAmbiguous',
+      message:
+        '"Lists" could be any of "Home/Lists" (id home-lists), "Work/Lists" (id work-lists); give the full path or the id. Nothing changed.',
+    })
+    expect(projects.length).toBe(before)
+  })
+})
+
 describe('findTasks', () => {
   const find = (args: FindTasksParams, limit = 100) =>
     evaluate(findTasks, { ...args, limit })
@@ -863,10 +1009,11 @@ describe('read scripts', () => {
 
   test("a task's project is the full path of its containing project", () => {
     existing({
-      containingProject: project('garden', 'Garden', {
-        name: 'Outside',
-        parent: { name: 'Domestic', parent: null },
-      }),
+      containingProject: project(
+        'garden',
+        'Garden',
+        folder('outside', 'Outside', folder('domestic', 'Domestic')),
+      ),
     })
     existing({ containingProject: housekeeping })
     existing()

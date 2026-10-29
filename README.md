@@ -58,17 +58,19 @@ Measured on Due 26.4.4:
 | `omnifocus_find_tasks`        | Find tasks anywhere by part of the name (`text`), `project` and `tag`; `includeClosed` adds completed and dropped ones, at most 100       |
 | `omnifocus_list_tags`         | List tags with their full paths (`Slot/Morning`) and status                                                                               |
 | `omnifocus_list_projects`     | List projects with their full paths (`Domestic/Housekeeping`) and status                                                                  |
+| `omnifocus_create_tag`        | Make a tag, top-level or inside a `parent`; one already there is returned with `created: false`                                           |
+| `omnifocus_create_project`    | Make an active project, top-level or in an existing `folder`, with a `note`; an open one already there is returned with `created: false`  |
 | `omnifocus_create_task`       | Add a task to a `project`, or to the Inbox without one (`name`, `note`, `tags`, `deferDate`, `dueDate`, `repeat`)                         |
 | `omnifocus_update_task`       | Change a task by `id`; leave a field out to keep it; `project` moves it; `clear` removes a date, the repeat or the project (to the Inbox) |
 | `omnifocus_complete_tasks`    | Complete one or more tasks, or with `skip` drop just an occurrence; a repeating task needs the `deferDate` you saw; all or nothing        |
 
 ### How it works
 
-The server runs `osascript -l JavaScript`, which hands an OmniJS program to OmniFocus with `evaluateJavascript`. Each program is a TypeScript function in `src/omnifocus-scripts.ts`, sent as source text with its arguments as one JSON literal, and its JSON answer is decoded with an Effect Schema. Calls run one at a time and time out after 30 seconds. Failures come back as tagged errors (`OmniFocusFailed`, `OmniFocusTimedOut`, `OmniFocusOutputInvalid`, `OmniFocusTaskNotFound`, `OmniFocusTagNotFound`, `OmniFocusTagAmbiguous`, `OmniFocusProjectNotFound`, `OmniFocusProjectAmbiguous`, `OmniFocusProjectClosed`, `OmniFocusTaskIsProject`, `OmniFocusRepeatInvalid`, `OmniFocusNotRepeating`, `OmniFocusOccurrenceMoved`, `OmniFocusOccurrenceRequired`, `OmniFocusTaskListedTwice`, `OmniFocusPerspectiveNotFound`, `OmniFocusPerspectiveAmbiguous`, `OmniFocusPerspectiveUnsupported`). See `src/omnifocus.ts`.
+The server runs `osascript -l JavaScript`, which hands an OmniJS program to OmniFocus with `evaluateJavascript`. Each program is a TypeScript function in `src/omnifocus-scripts.ts`, sent as source text with its arguments as one JSON literal, and its JSON answer is decoded with an Effect Schema. Calls run one at a time and time out after 30 seconds. Failures come back as tagged errors (`OmniFocusFailed`, `OmniFocusTimedOut`, `OmniFocusOutputInvalid`, `OmniFocusTaskNotFound`, `OmniFocusTagNotFound`, `OmniFocusTagAmbiguous`, `OmniFocusProjectNotFound`, `OmniFocusProjectAmbiguous`, `OmniFocusProjectClosed`, `OmniFocusTaskIsProject`, `OmniFocusRepeatInvalid`, `OmniFocusNotRepeating`, `OmniFocusOccurrenceMoved`, `OmniFocusOccurrenceRequired`, `OmniFocusTaskListedTwice`, `OmniFocusFolderNotFound`, `OmniFocusFolderAmbiguous`, `OmniFocusPerspectiveNotFound`, `OmniFocusPerspectiveAmbiguous`, `OmniFocusPerspectiveUnsupported`). See `src/omnifocus.ts`.
 
 A perspective's tasks are worked out in `src/perspectives.ts`. One call reads every remaining task, the tags, and each custom perspective's filter rules, and the rules are evaluated the way OmniFocus does: a tag also matches the tags nested under it, and a rule whose tags were all deleted is ignored.
 
-What a task means is left to OmniFocus. `status` is OmniFocus's own task status. A date without a time gets the default start or due time from OmniFocus's settings. A repeat is an OmniFocus repetition rule, and any field you leave out gets OmniFocus's default. Completing a repeating task twice moves it on twice, so `omnifocus_complete_tasks` takes the `deferDate` you saw for a repeating task and changes nothing if the task has moved on since. It checks every task before completing any, so a refused call changes nothing. No tool creates tags, projects or perspectives or deletes tasks.
+What a task means is left to OmniFocus. `status` is OmniFocus's own task status. A date without a time gets the default start or due time from OmniFocus's settings. A repeat is an OmniFocus repetition rule, and any field you leave out gets OmniFocus's default. Completing a repeating task twice moves it on twice, so `omnifocus_complete_tasks` takes the `deferDate` you saw for a repeating task and changes nothing if the task has moved on since. It checks every task before completing any, so a refused call changes nothing. No tool creates folders or perspectives, and none deletes anything. `omnifocus_create_task` never creates the tags or project it is given; a name that doesn't exist is an error, so a typo can't make a stray tag.
 
 ### Setup
 
@@ -79,7 +81,7 @@ What a task means is left to OmniFocus. `status` is OmniFocus's own task status.
 
 ```sh
 bun scripts/verify-omnifocus.ts            # read-only: perspectives, tags, and each supported perspective's tasks
-bun scripts/verify-omnifocus.ts --write    # also creates a throwaway project and repeating task in it, updates, completes, skips and moves the task, then deletes them
+bun scripts/verify-omnifocus.ts --write    # also creates a throwaway tag, project and tasks in it, updates, completes, skips and moves them, then deletes them
 bun scripts/verify-omnifocus.ts --parity   # compares each supported perspective with what OmniFocus shows in a temporary tab
 ```
 
@@ -93,8 +95,8 @@ Measured on OmniFocus 4.9.3:
 - Only these perspective rules are evaluated: availability (available or remaining), has any or all of some tags, has no children, has a defer date, nested all/any/none groups, and disabled rules. A perspective with any other rule is unsupported, and so is one that could show completed or dropped items (such as the Completed and Changed perspectives). `omnifocus_list_perspectives` says why.
 - Perspectives are read-only by design. No tool creates or edits one, and built-in perspectives such as Forecast aren't available.
 - `omnifocus_complete_tasks` tells occurrences apart by `deferDate`, so for a repeating task without a defer date it can't stop a second completion.
-- Tags must already exist. A tag is given by its id, by its full path or by a name only one tag has.
-- Projects must already exist, and are given the same way, by id, by full path (folders first) or by a name only one project has. A completed or dropped project takes no tasks: OmniFocus would reopen a completed one, and a task added to a dropped one is dropped. An on-hold project takes them, and they are Blocked.
+- A task's tags must already exist; `omnifocus_create_tag` makes new ones. A tag is given by its id, by its full path or by a name only one tag has.
+- A task's project must already exist; `omnifocus_create_project` makes new ones. Projects are given the same way, by id, by full path (folders first) or by a name only one project has. A completed or dropped project takes no tasks: OmniFocus would reopen a completed one, and a task added to a dropped one is dropped. An on-hold project takes them, and they are Blocked.
 
 ## Slack
 

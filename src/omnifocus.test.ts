@@ -284,6 +284,8 @@ describe('OmniFocus tools over MCP', () => {
       ['omnifocus_find_tasks', true, false, false],
       ['omnifocus_list_tags', true, false, false],
       ['omnifocus_list_projects', true, false, false],
+      ['omnifocus_create_tag', false, false, false],
+      ['omnifocus_create_project', false, false, false],
       ['omnifocus_create_task', false, false, true],
       ['omnifocus_update_task', false, true, true],
       ['omnifocus_complete_tasks', false, true, true],
@@ -393,6 +395,29 @@ describe('OmniFocus tools over MCP', () => {
     )
 
     expect(reply.result.structuredContent).toEqual({ projects })
+  })
+
+  test('omnifocus_create_tag and omnifocus_create_project send what to make and say whether they made it', async () => {
+    const tag = { id: 'g1', name: 'Run', path: 'Slot/Run', status: 'Active' }
+    const madeTag = await callTool(
+      'omnifocus_create_tag',
+      { name: 'Run', parent: 'Slot' },
+      { reply: JSON.stringify({ tag, created: true }) },
+    )
+    expect((await sent()).args).toEqual({ name: 'Run', parent: 'Slot' })
+    expect(madeTag.result.structuredContent).toEqual({ tag, created: true })
+
+    const project = { id: 'p9', name: 'Run', path: 'Run', status: 'Active' }
+    const madeProject = await callTool(
+      'omnifocus_create_project',
+      { name: 'Run', folder: null, note: 'n' },
+      { reply: JSON.stringify({ project, created: false }) },
+    )
+    expect((await sent()).args).toEqual({ name: 'Run', note: 'n' })
+    expect(madeProject.result.structuredContent).toEqual({
+      project,
+      created: false,
+    })
   })
 
   test('a task name with quotes, a backslash, a newline and emoji reaches OmniFocus intact as JSON', async () => {
