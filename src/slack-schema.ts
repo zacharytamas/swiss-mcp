@@ -40,7 +40,7 @@ export interface RawBlock {
   readonly timestamp?: number | undefined
   readonly alt_text?: string | undefined
   readonly title?: string | TextObject | undefined
-  readonly style?: typeof Style.Type | undefined
+  readonly style?: typeof Style.Type | null | undefined
 }
 const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
   type: Schema.String,
@@ -65,7 +65,8 @@ const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
   timestamp: Schema.optional(Schema.Number),
   alt_text: Schema.optional(Schema.String),
   title: Schema.optional(Schema.Union([Schema.String, TextObject])),
-  style: Schema.optional(Style),
+  // Lists and buttons send a string `style`, which says nothing about how text looks.
+  style: Loose(Style),
 })
 const Blocks = Loose(Schema.Array(RawBlock))
 const Content = {
