@@ -55,6 +55,7 @@ Measured on Due 26.4.4:
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `omnifocus_list_perspectives` | List custom perspectives and whether their tasks can be worked out here                                                                   |
 | `omnifocus_perspective_tasks` | The tasks a custom perspective shows, by its exact `perspective` name                                                                     |
+| `omnifocus_find_tasks`        | Find tasks anywhere by part of the name (`text`), `project` and `tag`; `includeClosed` adds completed and dropped ones, at most 100       |
 | `omnifocus_list_tags`         | List tags with their full paths (`Slot/Morning`) and status                                                                               |
 | `omnifocus_list_projects`     | List projects with their full paths (`Domestic/Housekeeping`) and status                                                                  |
 | `omnifocus_create_task`       | Add a task to a `project`, or to the Inbox without one (`name`, `note`, `tags`, `deferDate`, `dueDate`, `repeat`)                         |
@@ -87,6 +88,7 @@ bun scripts/verify-omnifocus.ts --parity   # compares each supported perspective
 Measured on OmniFocus 4.9.3:
 
 - Dates are this Mac's local wall-clock time, to the minute.
+- `omnifocus_find_tasks` lists at most 100 tasks, in database order, and says how many more matched.
 - `omnifocus_perspective_tasks` lists tasks in database order (Inbox first), not in the perspective's sort order, and without its grouping.
 - Only these perspective rules are evaluated: availability (available or remaining), has any or all of some tags, has no children, has a defer date, nested all/any/none groups, and disabled rules. A perspective with any other rule is unsupported, and so is one that could show completed or dropped items (such as the Completed and Changed perspectives). `omnifocus_list_perspectives` says why.
 - Perspectives are read-only by design. No tool creates or edits one, and built-in perspectives such as Forecast aren't available.

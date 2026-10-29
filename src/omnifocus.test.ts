@@ -281,6 +281,7 @@ describe('OmniFocus tools over MCP', () => {
     ).toEqual([
       ['omnifocus_list_perspectives', true, false, false],
       ['omnifocus_perspective_tasks', true, false, false],
+      ['omnifocus_find_tasks', true, false, false],
       ['omnifocus_list_tags', true, false, false],
       ['omnifocus_list_projects', true, false, false],
       ['omnifocus_create_task', false, false, true],
@@ -354,6 +355,24 @@ describe('OmniFocus tools over MCP', () => {
     const { error: tag, message: text } = failure(reply)
     expect(tag).toBe(error)
     expect(text).toContain(message)
+  })
+
+  test('omnifocus_find_tasks sends what to match and how many to list, and returns what OmniFocus found', async () => {
+    const reply = await callTool(
+      'omnifocus_find_tasks',
+      { text: 'ella', tag: 'Slot', project: null },
+      { reply: JSON.stringify({ tasks: [MORNING_TASK], omitted: 0 }) },
+    )
+
+    expect((await sent()).args).toEqual({
+      text: 'ella',
+      tag: 'Slot',
+      limit: 100,
+    })
+    expect(reply.result.structuredContent).toEqual({
+      tasks: [MORNING_TASK],
+      omitted: 0,
+    })
   })
 
   test('omnifocus_list_projects returns the projects OmniFocus listed', async () => {

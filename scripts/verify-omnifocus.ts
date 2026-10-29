@@ -1,5 +1,5 @@
 // Calls the OmniFocus tools through the real MCP server and checks what OmniFocus reports back.
-// Default: read-only (list perspectives, tags and projects, and each supported perspective's tasks).
+// Default: read-only (list perspectives, tags and projects, each supported perspective's tasks, and find tasks).
 // --write: create a throwaway project, and in it create, update, complete and skip a throwaway repeating task, move it
 // to the Inbox and back, complete it with a second task in one call, and check a dropped throwaway project takes no
 // task. Then delete every task and project with the throwaway names.
@@ -114,6 +114,36 @@ await check('omnifocus_list_projects', {}, (c) =>
     : 'projects missing path',
 )
 
+const remaining = await check('omnifocus_find_tasks', {}, (c) =>
+  !Array.isArray(c.tasks)
+    ? 'no task list'
+    : c.tasks.some((t: Item) => ['Completed', 'Dropped'].includes(t.status))
+      ? 'found a closed task without includeClosed'
+      : undefined,
+)
+console.log(
+  `  ${remaining?.tasks.length} remaining, ${remaining?.omitted} omitted`,
+)
+await check('omnifocus_find_tasks', { includeClosed: true }, (c) =>
+  !Array.isArray(c.tasks)
+    ? 'no task list'
+    : c.tasks.length + c.omitted <=
+        (remaining?.tasks.length ?? 0) + (remaining?.omitted ?? 0)
+      ? 'includeClosed found no more than the remaining tasks'
+      : undefined,
+)
+const sample: Item | undefined = remaining?.tasks.find(
+  (t: Item) => t.name.length > 3,
+)
+if (sample) {
+  const part = sample.name.slice(1, -1).toUpperCase()
+  await check('omnifocus_find_tasks', { text: part }, (c) =>
+    c.tasks?.some((t: Item) => t.id === sample.id)
+      ? undefined
+      : `"${part}" did not find "${sample.name}"`,
+  )
+}
+
 const shown = new Map<string, ReadonlyArray<Item>>()
 for (const p of supported) {
   const content = await check(
@@ -157,6 +187,8 @@ if (write) {
       },
     )
 
+    const projectId = projects.find((p: Item) => p.path === project).id
+
     const created = await step(
       'omnifocus_create_task',
       {
@@ -183,6 +215,16 @@ if (write) {
     )
     const id = created.task.id
     const seen = created.task.deferDate
+
+    await step(
+      'omnifocus_find_tasks',
+      { text: name, project: projectId },
+      ({ tasks }) =>
+        tasks?.some((t: Item) => t.id === id) &&
+        tasks.every((t: Item) => t.project === project)
+          ? undefined
+          : `found ${JSON.stringify(tasks)}, not the throwaway task in its project`,
+    )
 
     await step(
       'omnifocus_update_task',
@@ -277,7 +319,6 @@ if (write) {
           ? `project is ${task?.project} after clearing it`
           : undefined,
     )
-    const projectId = projects.find((p: Item) => p.path === project).id
     await step(
       'omnifocus_update_task',
       { id, project: projectId },

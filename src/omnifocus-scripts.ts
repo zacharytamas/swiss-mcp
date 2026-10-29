@@ -1,6 +1,7 @@
 import type {
   CompleteTasksParams,
   CreateTaskParams,
+  FindTasksParams,
   ScriptFailure,
   UpdateTaskParams,
 } from './omnifocus-schema.ts'
@@ -328,6 +329,7 @@ const lib = () => {
     repetitionRule,
     task,
     find,
+    firstMatch,
     tags,
     project,
     tagTree,
@@ -391,6 +393,75 @@ export const listProjects: Script<NoArgs> = (_, omni) => ({
     status: omni.enumName(p.status),
   })),
 })
+
+// A search, so a project or tag matches every project or tag it could name, closed ones included, and a tag also
+// matches the tags nested under it, as OmniFocus's own tag rules do.
+export const findTasks: Script<FindTasksParams & { limit: number }> = (
+  args,
+  omni,
+) => {
+  const ids = (found: ReadonlyArray<{ id: { primaryKey: string } }>) =>
+    new Set(found.map((item) => item.id.primaryKey))
+  const projectRef = args.project
+  const projectIds =
+    projectRef === undefined
+      ? null
+      : ids(
+          omni.firstMatch(
+            flattenedProjects,
+            (p) => p.id.primaryKey === projectRef,
+            (p) => omni.projectPath(p) === projectRef,
+            (p) => p.name === projectRef,
+          ),
+        )
+  if (projectIds?.size === 0) {
+    omni.fail(
+      'OmniFocusProjectNotFound',
+      `No OmniFocus project has the id, path or name "${projectRef}"; omnifocus_list_projects lists them.`,
+    )
+  }
+  const tagRef = args.tag
+  const tagIds =
+    tagRef === undefined
+      ? null
+      : ids(
+          omni.firstMatch(
+            flattenedTags,
+            (t) => t.id.primaryKey === tagRef,
+            (t) => omni.tagPath(t) === tagRef,
+            (t) => t.name === tagRef,
+          ),
+        )
+  if (tagIds?.size === 0) {
+    omni.fail(
+      'OmniFocusTagNotFound',
+      `No OmniFocus tag has the id, path or name "${tagRef}"; omnifocus_list_tags lists them.`,
+    )
+  }
+  const tagged = (tag: OFTag) => {
+    for (let at: OFTag | null = tag; at; at = at.parent) {
+      if (tagIds?.has(at.id.primaryKey)) return true
+    }
+    return false
+  }
+
+  const text = args.text?.toLowerCase()
+  const { Completed, Dropped } = Task.Status
+  const found = flattenedTasks.filter(
+    (t) =>
+      (args.includeClosed === true ||
+        (t.taskStatus !== Completed && t.taskStatus !== Dropped)) &&
+      (text === undefined || t.name.toLowerCase().includes(text)) &&
+      (projectIds === null ||
+        (t.containingProject !== null &&
+          projectIds.has(t.containingProject.id.primaryKey))) &&
+      (tagIds === null || t.tags.some(tagged)),
+  )
+  return {
+    tasks: found.slice(0, args.limit).map(omni.task),
+    omitted: Math.max(0, found.length - args.limit),
+  }
+}
 
 // To the end of the project, or into the Inbox as Quick Entry does. Everything that can be refused is checked before the
 // task exists.

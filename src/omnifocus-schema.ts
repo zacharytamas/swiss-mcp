@@ -278,6 +278,41 @@ export const UpdateTaskParams = Schema.Struct({
 })
 export type UpdateTaskParams = typeof UpdateTaskParams.Type
 
+export const FindTasksParams = Schema.Struct({
+  text: Omittable(
+    NonEmpty.annotate({
+      description: 'Part of the task name, in any case.',
+    }),
+  ),
+  project: Omittable(
+    NonEmpty.annotate({
+      description:
+        'A project by id, by full path such as "Domestic/Housekeeping", or by name. Every project it could name counts, closed ones included.',
+    }),
+  ),
+  tag: Omittable(
+    NonEmpty.annotate({
+      description:
+        'A tag by id, by full path such as "Slot/Morning", or by name. Every tag it could name counts, and so do the tags nested under them.',
+    }),
+  ),
+  includeClosed: Omittable(
+    Schema.Boolean.annotate({
+      description:
+        'true also finds completed and dropped tasks. Left out, only remaining ones.',
+    }),
+  ),
+})
+export type FindTasksParams = typeof FindTasksParams.Type
+
+export const FoundTasks = Schema.Struct({
+  tasks: Schema.Array(Task),
+  omitted: Schema.Number.annotate({
+    description:
+      'How many more tasks matched than are listed. When it is not 0, narrow the search.',
+  }),
+})
+
 export const CompleteTasksParams = Schema.Struct({
   tasks: Schema.Array(
     Schema.Struct({
