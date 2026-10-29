@@ -1,5 +1,7 @@
 import type {
   CompleteTasksParams,
+  CreateProjectParams,
+  CreateTagParams,
   CreateTaskParams,
   FindTasksParams,
   ScriptFailure,
@@ -22,10 +24,12 @@ interface OFTag {
   readonly id: { readonly primaryKey: string }
   readonly name: string
   readonly parent: OFTag | null
+  readonly children: ReadonlyArray<OFTag>
   readonly status: Enum<'Tag.Status'>
 }
 
 interface OFFolder {
+  readonly id: { readonly primaryKey: string }
   readonly name: string
   readonly parent: OFFolder | null
 }
@@ -33,6 +37,7 @@ interface OFFolder {
 interface OFProject {
   readonly id: { readonly primaryKey: string }
   readonly name: string
+  note: string
   readonly status: ProjectStatus
   readonly parentFolder: OFFolder | null
   readonly ending: unknown
@@ -90,7 +95,10 @@ declare const Task: {
     Record<'DeferDate' | 'DueDate' | 'PlannedDate', AnchorDateKey>
   >
 }
+// A null position is the top level.
+declare const Tag: new (name: string, position: OFTag | null) => OFTag
 declare const Project: {
+  new (name: string, position: OFFolder | null): OFProject
   readonly Status: Readonly<Record<'Done' | 'Dropped', ProjectStatus>>
 }
 declare const Perspective: {
@@ -107,6 +115,9 @@ declare const Perspective: {
 declare const flattenedTasks: ReadonlyArray<OFTask>
 declare const flattenedTags: ReadonlyArray<OFTag>
 declare const flattenedProjects: ReadonlyArray<OFProject>
+declare const flattenedFolders: ReadonlyArray<OFFolder>
+// Top-level tags.
+declare const tags: ReadonlyArray<OFTag>
 declare const inbox: { readonly ending: unknown }
 declare const moveTasks: (
   tasks: ReadonlyArray<OFTask>,
@@ -153,12 +164,28 @@ const lib = () => {
     for (let at: OFTag | null = tag; at; at = at.parent) names.unshift(at.name)
     return names.join('/')
   }
-  const projectPath = (project: OFProject) => {
-    const names = [project.name]
-    for (let at = project.parentFolder; at; at = at.parent)
+  const folderPath = (folder: OFFolder) => {
+    const names: Array<string> = []
+    for (let at: OFFolder | null = folder; at; at = at.parent)
       names.unshift(at.name)
     return names.join('/')
   }
+  const projectPath = (project: OFProject) =>
+    project.parentFolder === null
+      ? project.name
+      : `${folderPath(project.parentFolder)}/${project.name}`
+  const tagInfo = (t: OFTag) => ({
+    id: t.id.primaryKey,
+    name: t.name,
+    path: tagPath(t),
+    status: enumName(t.status),
+  })
+  const projectInfo = (p: OFProject) => ({
+    id: p.id.primaryKey,
+    name: p.name,
+    path: projectPath(p),
+    status: enumName(p.status),
+  })
 
   const schedules = {
     regularly: Task.RepetitionScheduleType.Regularly,
@@ -245,7 +272,7 @@ const lib = () => {
       if (only === undefined) {
         return fail(
           'OmniFocusTagNotFound',
-          `No OmniFocus tag has the id, path or name "${ref}". Tags are never created; omnifocus_list_tags lists them. Nothing changed.`,
+          `No OmniFocus tag has the id, path or name "${ref}". omnifocus_list_tags lists them, and omnifocus_create_tag makes a new one. Nothing changed.`,
         )
       }
       if (others.length > 0) {
@@ -283,7 +310,7 @@ const lib = () => {
     if (found.length === 0) {
       return fail(
         'OmniFocusProjectNotFound',
-        `No OmniFocus project has the id, path or name "${ref}". Projects are never created; omnifocus_list_projects lists them. Nothing changed.`,
+        `No OmniFocus project has the id, path or name "${ref}". omnifocus_list_projects lists them, and omnifocus_create_project makes a new one. Nothing changed.`,
       )
     }
     if (only === undefined) {
@@ -323,7 +350,10 @@ const lib = () => {
     date,
     enumName,
     tagPath,
+    folderPath,
     projectPath,
+    tagInfo,
+    projectInfo,
     schedules,
     anchors,
     repetitionRule,
@@ -377,22 +407,69 @@ export const snapshot: Script<NoArgs> = (_, omni) => {
 }
 
 export const listTags: Script<NoArgs> = (_, omni) => ({
-  tags: flattenedTags.map((t) => ({
-    id: t.id.primaryKey,
-    name: t.name,
-    path: omni.tagPath(t),
-    status: omni.enumName(t.status),
-  })),
+  tags: flattenedTags.map(omni.tagInfo),
 })
 
 export const listProjects: Script<NoArgs> = (_, omni) => ({
-  projects: flattenedProjects.map((p) => ({
-    id: p.id.primaryKey,
-    name: p.name,
-    path: omni.projectPath(p),
-    status: omni.enumName(p.status),
-  })),
+  projects: flattenedProjects.map(omni.projectInfo),
 })
+
+// A tag already in the same place with the same name is returned as it is, so a retry makes no second one.
+export const createTag: Script<CreateTagParams> = (args, omni) => {
+  const [parent = null] =
+    args.parent === undefined ? [] : omni.tags([args.parent])
+  const existing = (parent === null ? tags : parent.children).find(
+    (t) => t.name === args.name,
+  )
+  if (existing !== undefined) {
+    return { tag: omni.tagInfo(existing), created: false }
+  }
+  return { tag: omni.tagInfo(new Tag(args.name, parent)), created: true }
+}
+
+// An open project already in the same folder with the same name is returned as it is, so a retry makes no second one. A
+// completed or dropped one doesn't count, since it takes no tasks here.
+export const createProject: Script<CreateProjectParams> = (args, omni) => {
+  const ref = args.folder
+  let folder: OFFolder | null = null
+  if (ref !== undefined) {
+    const found = omni.firstMatch(
+      flattenedFolders,
+      (f) => f.id.primaryKey === ref,
+      (f) => omni.folderPath(f) === ref,
+      (f) => f.name === ref,
+    )
+    const [only, ...others] = found
+    if (only === undefined) {
+      return omni.fail(
+        'OmniFocusFolderNotFound',
+        `No OmniFocus folder has the id, path or name "${ref}". Folders are never created. Nothing changed.`,
+      )
+    }
+    if (others.length > 0) {
+      return omni.fail(
+        'OmniFocusFolderAmbiguous',
+        `"${ref}" could be any of ${found.map((f) => `${JSON.stringify(omni.folderPath(f))} (id ${f.id.primaryKey})`).join(', ')}; give the full path or the id. Nothing changed.`,
+      )
+    }
+    folder = only
+  }
+  const { Done, Dropped } = Project.Status
+  const existing = flattenedProjects.find(
+    (p) =>
+      p.name === args.name &&
+      (p.parentFolder?.id.primaryKey ?? null) ===
+        (folder?.id.primaryKey ?? null) &&
+      p.status !== Done &&
+      p.status !== Dropped,
+  )
+  if (existing !== undefined) {
+    return { project: omni.projectInfo(existing), created: false }
+  }
+  const project = new Project(args.name, folder)
+  if (args.note !== undefined) project.note = args.note
+  return { project: omni.projectInfo(project), created: true }
+}
 
 // A search, so a project or tag matches every project or tag it could name, closed ones included, and a tag also
 // matches the tags nested under it, as OmniFocus's own tag rules do.

@@ -1,5 +1,7 @@
 import { Option, Predicate, Schema, SchemaGetter } from 'effect'
 import {
+  OmniFocusFolderAmbiguous,
+  OmniFocusFolderNotFound,
   OmniFocusNotRepeating,
   OmniFocusOccurrenceMoved,
   OmniFocusOccurrenceRequired,
@@ -127,26 +129,36 @@ export const PerspectiveInfo = Schema.Struct({
   unsupportedReason: Schema.optional(Schema.String),
 })
 
-export const TagList = Schema.Struct({
-  tags: Schema.Array(
-    Schema.Struct({
-      id: Schema.String,
-      name: Schema.String,
-      path: Schema.String,
-      status: Schema.Literals(['Active', 'OnHold', 'Dropped']),
-    }),
-  ),
+const TagInfo = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  path: Schema.String,
+  status: Schema.Literals(['Active', 'OnHold', 'Dropped']),
 })
 
+const ProjectInfo = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  path: Schema.String,
+  status: Schema.Literals(['Active', 'OnHold', 'Done', 'Dropped']),
+})
+
+export const TagList = Schema.Struct({ tags: Schema.Array(TagInfo) })
+
 export const ProjectList = Schema.Struct({
-  projects: Schema.Array(
-    Schema.Struct({
-      id: Schema.String,
-      name: Schema.String,
-      path: Schema.String,
-      status: Schema.Literals(['Active', 'OnHold', 'Done', 'Dropped']),
-    }),
-  ),
+  projects: Schema.Array(ProjectInfo),
+})
+
+const Created = Schema.Boolean.annotate({
+  description:
+    'false when one by that name was already there, which is returned as it is.',
+})
+
+export const CreatedTag = Schema.Struct({ tag: TagInfo, created: Created })
+
+export const CreatedProject = Schema.Struct({
+  project: ProjectInfo,
+  created: Created,
 })
 
 export const TaskResult = Schema.Struct({ task: Task })
@@ -183,6 +195,8 @@ export const ScriptFailure = Schema.Union([
   OmniFocusOccurrenceMoved,
   OmniFocusOccurrenceRequired,
   OmniFocusTaskListedTwice,
+  OmniFocusFolderNotFound,
+  OmniFocusFolderAmbiguous,
 ])
 export type ScriptFailure = typeof ScriptFailure.Encoded
 
@@ -206,11 +220,11 @@ const TaskId = NonEmpty.annotate({
 })
 const TagRefs = Schema.Array(NonEmpty).annotate({
   description:
-    'Tags by id, by full path such as "Slot/Morning", or by a name only one tag has. An unknown or ambiguous tag is an error; tags are never created.',
+    'Tags by id, by full path such as "Slot/Morning", or by a name only one tag has. An unknown or ambiguous tag is an error; omnifocus_create_tag makes a new one.',
 })
 const ProjectRef = NonEmpty.annotate({
   description:
-    'A project by id, by full path such as "Domestic/Housekeeping", or by a name only one project has. An unknown or ambiguous project is an error, and so is a completed or dropped one; projects are never created.',
+    'A project by id, by full path such as "Domestic/Housekeeping", or by a name only one project has. An unknown or ambiguous project is an error, and so is a completed or dropped one; omnifocus_create_project makes a new one.',
 })
 const DeferDate = LocalDate('default start time (Settings > Dates & Times)')
 const DueDate = LocalDate('default due time (Settings > Dates & Times)')
@@ -277,6 +291,29 @@ export const UpdateTaskParams = Schema.Struct({
   ),
 })
 export type UpdateTaskParams = typeof UpdateTaskParams.Type
+
+export const CreateTagParams = Schema.Struct({
+  name: NonEmpty,
+  parent: Omittable(
+    NonEmpty.annotate({
+      description:
+        'The tag to put it in, by id, by full path such as "Slot", or by a name only one tag has. Left out, the new tag is top-level.',
+    }),
+  ),
+})
+export type CreateTagParams = typeof CreateTagParams.Type
+
+export const CreateProjectParams = Schema.Struct({
+  name: NonEmpty,
+  folder: Omittable(
+    NonEmpty.annotate({
+      description:
+        'The folder to put it in, by id, by full path such as "Domestic", or by a name only one folder has. Folders are never created. Left out, the project is top-level.',
+    }),
+  ),
+  note: Omittable(Schema.String),
+})
+export type CreateProjectParams = typeof CreateProjectParams.Type
 
 export const FindTasksParams = Schema.Struct({
   text: Omittable(

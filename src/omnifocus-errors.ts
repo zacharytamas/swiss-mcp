@@ -99,6 +99,16 @@ export class OmniFocusTaskListedTwice extends Schema.TaggedError<OmniFocusTaskLi
   fields,
 ) {}
 
+export class OmniFocusFolderNotFound extends Schema.TaggedError<OmniFocusFolderNotFound>()(
+  'OmniFocusFolderNotFound',
+  fields,
+) {}
+
+export class OmniFocusFolderAmbiguous extends Schema.TaggedError<OmniFocusFolderAmbiguous>()(
+  'OmniFocusFolderAmbiguous',
+  fields,
+) {}
+
 export type OmniFocusScriptError =
   | OmniFocusTaskNotFound
   | OmniFocusTagNotFound
@@ -113,6 +123,8 @@ export type OmniFocusScriptError =
   | OmniFocusOccurrenceMoved
   | OmniFocusOccurrenceRequired
   | OmniFocusTaskListedTwice
+  | OmniFocusFolderNotFound
+  | OmniFocusFolderAmbiguous
 
 export type OmniFocusError =
   | OmniFocusFailed

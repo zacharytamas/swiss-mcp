@@ -1,8 +1,9 @@
 // Calls the OmniFocus tools through the real MCP server and checks what OmniFocus reports back.
 // Default: read-only (list perspectives, tags and projects, each supported perspective's tasks, and find tasks).
-// --write: create a throwaway project, and in it create, update, complete and skip a throwaway repeating task, move it
-// to the Inbox and back, complete it with a second task in one call, and check a dropped throwaway project takes no
-// task. Then delete every task and project with the throwaway names.
+// --write: create a throwaway project and a throwaway tag with a child, each twice to check a retry makes no second
+// one. In the project, create, update, complete and skip a throwaway repeating task, move it to the Inbox and back,
+// complete it with a second task in one call, and check a dropped throwaway project takes no task. Then delete every
+// task, project and tag with the throwaway names.
 // A failed write step stops the ones after it, so nothing acts on a task the server returned wrongly.
 // --parity: compare each supported perspective's tasks with what OmniFocus renders for it in a temporary tab.
 type Item = Record<string, any>
@@ -162,18 +163,48 @@ if (write) {
   // Top-level, so a project's path is its name.
   const project = `${name} project`
   const dropped = `${name} dropped project`
+  const tagName = `${name} tag`
   const pad = (n: number) => String(n).padStart(2, '0')
   const now = new Date()
   const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
   const later = (a: unknown, b: unknown) =>
     typeof a === 'string' && typeof b === 'string' && a > b
   try {
+    await step(
+      'omnifocus_create_project',
+      { name: project, note: 'made by verify-omnifocus' },
+      ({ project: made, created }) =>
+        created !== true || made?.path !== project || made.status !== 'Active'
+          ? `made ${JSON.stringify(made)}, created ${created}`
+          : undefined,
+    )
+    await step('omnifocus_create_project', { name: project }, ({ created }) =>
+      created === false ? undefined : 'a retry made a second project',
+    )
     await omnijs(
-      `((active, dropped) => {
-  new Project(active)
+      `(dropped => {
   new Project(dropped).status = Project.Status.Dropped
   return JSON.stringify(null)
-})(${JSON.stringify(project)}, ${JSON.stringify(dropped)})`,
+})(${JSON.stringify(dropped)})`,
+    )
+    await step('omnifocus_create_tag', { name: tagName }, ({ tag, created }) =>
+      created !== true || tag?.path !== tagName
+        ? `made ${JSON.stringify(tag)}, created ${created}`
+        : undefined,
+    )
+    await step(
+      'omnifocus_create_tag',
+      { name: 'child', parent: tagName },
+      ({ tag, created }) =>
+        created !== true || tag?.path !== `${tagName}/child`
+          ? `made ${JSON.stringify(tag)}, created ${created}`
+          : undefined,
+    )
+    await step(
+      'omnifocus_create_tag',
+      { name: 'child', parent: tagName },
+      ({ created }) =>
+        created === false ? undefined : 'a retry made a second tag',
     )
     const { projects } = await step(
       'omnifocus_list_projects',
@@ -360,21 +391,23 @@ if (write) {
     report('write checks', (e as Error).message)
   } finally {
     const cleanup = await omnijs(
-      `((name, projects) => {
+      `((name, projects, tag) => {
   const tasks = () => flattenedTasks.filter((t) => t.name === name)
   const mine = () => flattenedProjects.filter((p) => projects.includes(p.name))
-  const deleted = { tasks: tasks().length, projects: mine().length }
+  const tagged = () => flattenedTags.filter((t) => t.name === tag)
+  const deleted = { tasks: tasks().length, projects: mine().length, tags: tagged().length }
   tasks().forEach((t) => deleteObject(t))
   mine().forEach((p) => deleteObject(p))
-  return JSON.stringify({ deleted, left: { tasks: tasks().length, projects: mine().length } })
-})(${JSON.stringify(name)}, ${JSON.stringify([project, dropped])})`,
+  tagged().forEach((t) => deleteObject(t))
+  return JSON.stringify({ deleted, left: { tasks: tasks().length, projects: mine().length, tags: tagged().length } })
+})(${JSON.stringify(name)}, ${JSON.stringify([project, dropped])}, ${JSON.stringify(tagName)})`,
     ).catch((e: Error) => ({ error: e.message }))
     const left = (cleanup as Item).left
     report(
       'cleanup',
-      left?.tasks === 0 && left?.projects === 0
+      left?.tasks === 0 && left?.projects === 0 && left?.tags === 0
         ? undefined
-        : 'tasks or projects left behind',
+        : 'tasks, projects or tags left behind',
       cleanup,
     )
   }
