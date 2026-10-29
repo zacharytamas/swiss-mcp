@@ -89,6 +89,16 @@ export class OmniFocusOccurrenceMoved extends Schema.TaggedError<OmniFocusOccurr
   fields,
 ) {}
 
+export class OmniFocusOccurrenceRequired extends Schema.TaggedError<OmniFocusOccurrenceRequired>()(
+  'OmniFocusOccurrenceRequired',
+  fields,
+) {}
+
+export class OmniFocusTaskListedTwice extends Schema.TaggedError<OmniFocusTaskListedTwice>()(
+  'OmniFocusTaskListedTwice',
+  fields,
+) {}
+
 export type OmniFocusScriptError =
   | OmniFocusTaskNotFound
   | OmniFocusTagNotFound
@@ -101,6 +111,8 @@ export type OmniFocusScriptError =
   | OmniFocusNotRepeating
   | OmniFocusUpdateConflict
   | OmniFocusOccurrenceMoved
+  | OmniFocusOccurrenceRequired
+  | OmniFocusTaskListedTwice
 
 export type OmniFocusError =
   | OmniFocusFailed

@@ -2,6 +2,7 @@ import { Option, Predicate, Schema, SchemaGetter } from 'effect'
 import {
   OmniFocusNotRepeating,
   OmniFocusOccurrenceMoved,
+  OmniFocusOccurrenceRequired,
   OmniFocusProjectAmbiguous,
   OmniFocusProjectClosed,
   OmniFocusProjectNotFound,
@@ -9,6 +10,7 @@ import {
   OmniFocusTagAmbiguous,
   OmniFocusTagNotFound,
   OmniFocusTaskIsProject,
+  OmniFocusTaskListedTwice,
   OmniFocusTaskNotFound,
   OmniFocusUpdateConflict,
 } from './omnifocus-errors.ts'
@@ -149,15 +151,20 @@ export const ProjectList = Schema.Struct({
 
 export const TaskResult = Schema.Struct({ task: Task })
 
-export const CompleteResult = Schema.Struct({
-  completed: Schema.NullOr(Task).annotate({
-    description:
-      'The occurrence that was completed. With skip, the dropped occurrence, or null if OmniFocus kept no record of it.',
-  }),
-  next: Schema.NullOr(Task).annotate({
-    description:
-      'The task again with its next occurrence, or null when it does not repeat (any more).',
-  }),
+export const CompleteResults = Schema.Struct({
+  results: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      completed: Schema.NullOr(Task).annotate({
+        description:
+          'The occurrence that was completed. With skip, the dropped occurrence, or null if OmniFocus kept no record of it.',
+      }),
+      next: Schema.NullOr(Task).annotate({
+        description:
+          'The task again with its next occurrence, or null when it does not repeat (any more).',
+      }),
+    }),
+  ).annotate({ description: 'One per task, in the order given.' }),
 })
 
 // What an OmniJS script answers instead of its result when it refuses to act: one of these errors, encoded as
@@ -174,6 +181,8 @@ export const ScriptFailure = Schema.Union([
   OmniFocusNotRepeating,
   OmniFocusUpdateConflict,
   OmniFocusOccurrenceMoved,
+  OmniFocusOccurrenceRequired,
+  OmniFocusTaskListedTwice,
 ])
 export type ScriptFailure = typeof ScriptFailure.Encoded
 
@@ -269,20 +278,26 @@ export const UpdateTaskParams = Schema.Struct({
 })
 export type UpdateTaskParams = typeof UpdateTaskParams.Type
 
-export const CompleteTaskParams = Schema.Struct({
-  id: TaskId,
-  deferDate: Schema.NullOr(LocalMinute).annotate({
-    description:
-      "The task's deferDate exactly as a tool last returned it (YYYY-MM-DD HH:mm, or null if it had none).",
-  }),
-  skip: Omittable(
-    Schema.Boolean.annotate({
-      description:
-        'true drops just this occurrence of a repeating task instead of completing it, so the task moves on to its next occurrence. A task that does not repeat is OmniFocusNotRepeating.',
+export const CompleteTasksParams = Schema.Struct({
+  tasks: Schema.Array(
+    Schema.Struct({
+      id: TaskId,
+      deferDate: Schema.optionalKey(
+        Schema.NullOr(LocalMinute).annotate({
+          description:
+            "The task's deferDate exactly as a tool last returned it (YYYY-MM-DD HH:mm, or null if it had none). Required for a repeating task; may be left out for one that does not repeat.",
+        }),
+      ),
+      skip: Omittable(
+        Schema.Boolean.annotate({
+          description:
+            'true drops just this occurrence of a repeating task instead of completing it, so the task moves on to its next occurrence. A task that does not repeat is OmniFocusNotRepeating.',
+        }),
+      ),
     }),
-  ),
+  ).check(Schema.isMinLength(1)),
 })
-export type CompleteTaskParams = typeof CompleteTaskParams.Type
+export type CompleteTasksParams = typeof CompleteTasksParams.Type
 
 export const ToolFailure = Schema.Struct({
   error: Schema.String,

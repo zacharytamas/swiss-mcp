@@ -1,8 +1,8 @@
 // Calls the OmniFocus tools through the real MCP server and checks what OmniFocus reports back.
 // Default: read-only (list perspectives, tags and projects, and each supported perspective's tasks).
 // --write: create a throwaway project, and in it create, update, complete and skip a throwaway repeating task, move it
-// to the Inbox and back, and check a dropped throwaway project takes no task. Then delete every task and project with
-// the throwaway names.
+// to the Inbox and back, complete it with a second task in one call, and check a dropped throwaway project takes no
+// task. Then delete every task and project with the throwaway names.
 // A failed write step stops the ones after it, so nothing acts on a task the server returned wrongly.
 // --parity: compare each supported perspective's tasks with what OmniFocus renders for it in a temporary tab.
 type Item = Record<string, any>
@@ -203,27 +203,44 @@ if (write) {
               : undefined,
     )
 
+    const unseen = await call('omnifocus_complete_tasks', { tasks: [{ id }] })
+    const unseenWhy =
+      unseen.error?.error === 'OmniFocusOccurrenceRequired'
+        ? undefined
+        : `expected OmniFocusOccurrenceRequired, got ${JSON.stringify(unseen.error ?? unseen.content)}`
+    report(
+      `omnifocus_complete_tasks on a repeating task without its deferDate (${unseen.ms} ms)`,
+      unseenWhy,
+      unseen.error,
+    )
+    if (unseenWhy)
+      throw new Error(
+        'the complete without a deferDate was not refused, so the write steps after it were skipped',
+      )
+
     const completed = await step(
-      'omnifocus_complete_task',
-      { id, deferDate: seen },
-      ({ completed, next }) =>
-        completed?.status !== 'Completed'
-          ? `completed is ${JSON.stringify(completed)}`
-          : completed.id === id
+      'omnifocus_complete_tasks',
+      { tasks: [{ id, deferDate: seen }] },
+      ({ results: [result] }) =>
+        result?.completed?.status !== 'Completed'
+          ? `completed is ${JSON.stringify(result?.completed)}`
+          : result.completed.id === id
             ? 'completed the repeating task itself, not an occurrence'
-            : next?.id !== id || !later(next.deferDate, seen)
-              ? `next is ${JSON.stringify(next)}`
+            : result.next?.id !== id || !later(result.next.deferDate, seen)
+              ? `next is ${JSON.stringify(result.next)}`
               : undefined,
     )
-    const nextSeen = completed.next.deferDate
+    const nextSeen = completed.results[0].next.deferDate
 
-    const stale = await call('omnifocus_complete_task', { id, deferDate: seen })
+    const stale = await call('omnifocus_complete_tasks', {
+      tasks: [{ id, deferDate: seen }],
+    })
     const staleWhy =
       stale.error?.error === 'OmniFocusOccurrenceMoved'
         ? undefined
         : `expected OmniFocusOccurrenceMoved, got ${JSON.stringify(stale.error ?? stale.content)}`
     report(
-      `omnifocus_complete_task again with the stale deferDate (${stale.ms} ms)`,
+      `omnifocus_complete_tasks again with the stale deferDate (${stale.ms} ms)`,
       staleWhy,
       stale.error,
     )
@@ -233,11 +250,11 @@ if (write) {
       )
 
     await step(
-      'omnifocus_complete_task',
-      { id, deferDate: nextSeen, skip: true },
-      ({ next }) =>
-        next?.id !== id || !later(next.deferDate, nextSeen)
-          ? `next is ${JSON.stringify(next)}`
+      'omnifocus_complete_tasks',
+      { tasks: [{ id, deferDate: nextSeen, skip: true }] },
+      ({ results: [result] }) =>
+        result?.next?.id !== id || !later(result.next.deferDate, nextSeen)
+          ? `next is ${JSON.stringify(result?.next)}`
           : undefined,
     )
 
@@ -267,6 +284,23 @@ if (write) {
       ({ task }) =>
         task?.project !== project
           ? `project is ${task?.project}, not the throwaway project`
+          : undefined,
+    )
+
+    const plain = await step(
+      'omnifocus_create_task',
+      { name, project },
+      ({ task }) => (task?.repeat === null ? undefined : 'created repeating'),
+    )
+    await step(
+      'omnifocus_complete_tasks',
+      { tasks: [{ id }, { id: plain.task.id }] },
+      ({ results }) =>
+        results?.length !== 2 ||
+        results[0].id !== id ||
+        results[1].id !== plain.task.id ||
+        results.some((r: Item) => r.completed?.status !== 'Completed')
+          ? `results are ${JSON.stringify(results)}, not both tasks completed in order`
           : undefined,
     )
 

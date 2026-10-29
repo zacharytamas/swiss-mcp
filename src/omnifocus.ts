@@ -22,8 +22,8 @@ import {
   OmniFocusTimedOut,
 } from './omnifocus-errors.ts'
 import {
-  CompleteResult,
-  CompleteTaskParams,
+  CompleteResults,
+  CompleteTasksParams,
   CreateTaskParams,
   PerspectiveInfo,
   PerspectiveList,
@@ -38,7 +38,7 @@ import {
   UpdateTaskParams,
 } from './omnifocus-schema.ts'
 import {
-  completeTask,
+  completeTasks,
   createTask,
   listPerspectives,
   listProjects,
@@ -235,10 +235,10 @@ export const OmniFocusToolkit = Toolkit.make(
     'changes',
   ),
   omnifocusTool(
-    'omnifocus_complete_task',
-    "Complete the occurrence of an OmniFocus task that you last saw. Pass the deferDate a tool returned for it: if the task has moved on since (completed on another device, or by an earlier call), nothing changes and the result is OmniFocusOccurrenceMoved. That check only looks at deferDate, so it can't tell apart occurrences of a repeating task that has no defer date. Completing a completed task that does not repeat changes nothing.",
-    CompleteTaskParams,
-    CompleteResult,
+    'omnifocus_complete_tasks',
+    "Complete one or more OmniFocus tasks, or with skip drop just the current occurrence of a repeating one. Every task is checked before any changes: if one can't be completed, nothing changes and the error names each one that can't. For a repeating task pass the deferDate a tool returned for it; if the task has moved on since (completed on another device, or by an earlier call), that is OmniFocusOccurrenceMoved, and leaving deferDate out is OmniFocusOccurrenceRequired. That check only looks at deferDate, so it can't tell apart occurrences of a repeating task that has no defer date. A task that does not repeat needs no deferDate, and completing it again changes nothing. A task listed twice is OmniFocusTaskListedTwice.",
+    CompleteTasksParams,
+    CompleteResults,
     'changes',
   ),
 )
@@ -348,9 +348,13 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
         omnifocus
           .evaluate('update task', program(updateTask, p), TaskResult)
           .pipe(toFailure),
-      omnifocus_complete_task: (p) =>
+      omnifocus_complete_tasks: (p) =>
         omnifocus
-          .evaluate('complete task', program(completeTask, p), CompleteResult)
+          .evaluate(
+            'complete tasks',
+            program(completeTasks, p),
+            CompleteResults,
+          )
           .pipe(toFailure),
     }
   }),
