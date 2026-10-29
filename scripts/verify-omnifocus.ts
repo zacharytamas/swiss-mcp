@@ -137,7 +137,8 @@ const sample: Item | undefined = remaining?.tasks.find(
   (t: Item) => t.name.length > 3,
 )
 if (sample) {
-  const part = sample.name.slice(1, -1).toUpperCase()
+  // Uppercasing changes some names (ß becomes SS), so the throwaway task checks case instead
+  const part = sample.name.toLowerCase().slice(1, -1)
   await check('omnifocus_find_tasks', { text: part }, (c) =>
     c.tasks?.some((t: Item) => t.id === sample.id)
       ? undefined
@@ -249,7 +250,7 @@ if (write) {
 
     await step(
       'omnifocus_find_tasks',
-      { text: name, project: projectId },
+      { text: name.toUpperCase(), project: projectId },
       ({ tasks }) =>
         tasks?.some((t: Item) => t.id === id) &&
         tasks.every((t: Item) => t.project === project)
