@@ -1,307 +1,34 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { runInNewContext } from 'node:vm'
+import {
+  Anchor,
+  evaluate,
+  existing,
+  FakeRule,
+  housekeeping,
+  local,
+  morning,
+  moves,
+  projects,
+  reset,
+  ruleCalls,
+  Schedule,
+  slot,
+  Status,
+  tags,
+  tasks,
+} from './omnifocus-fake.ts'
 import type {
   CompleteTasksParams,
   FindTasksParams,
 } from './omnifocus-schema.ts'
 import {
   completeTasks,
-  createProject,
-  createTag,
   createTask,
   findTasks,
-  listProjects,
-  listTags,
-  program,
-  snapshot,
   updateTask,
 } from './omnifocus-scripts.ts'
 
-// A stand-in for the slice of OmniJS the scripts use, written from Omni's API reference and what was measured on
-// OmniFocus 4.9.3: a completed or dropped occurrence of a repeating task is a clone, and the task itself moves on a
-// day. The programs run in a fresh VM context, so anything they reference besides these globals fails.
-const enumValue = (type: string, name: string) => ({
-  toString: () => `[object ${type}: ${name}]`,
-})
-const Status = {
-  Available: enumValue('Task.Status', 'Available'),
-  Next: enumValue('Task.Status', 'Next'),
-  Completed: enumValue('Task.Status', 'Completed'),
-  Dropped: enumValue('Task.Status', 'Dropped'),
-}
-const Schedule = {
-  Regularly: enumValue('Task.RepetitionScheduleType', 'Regularly'),
-  FromCompletion: enumValue('Task.RepetitionScheduleType', 'FromCompletion'),
-}
-const Anchor = {
-  DeferDate: enumValue('Task.AnchorDateKey', 'DeferDate'),
-  DueDate: enumValue('Task.AnchorDateKey', 'DueDate'),
-  PlannedDate: enumValue('Task.AnchorDateKey', 'PlannedDate'),
-}
-
-interface FakeTag {
-  id: { primaryKey: string }
-  name: string
-  parent: FakeTag | null
-  readonly children: ReadonlyArray<FakeTag>
-  status: object
-}
-const tag = (
-  id: string,
-  name: string,
-  parent: FakeTag | null = null,
-): FakeTag => ({
-  id: { primaryKey: id },
-  name,
-  parent,
-  get children() {
-    return tags.filter((t) => t.parent === this)
-  },
-  status: enumValue('Tag.Status', 'Active'),
-})
-
-const ProjectStatus = {
-  Active: enumValue('Project.Status', 'Active'),
-  OnHold: enumValue('Project.Status', 'OnHold'),
-  Done: enumValue('Project.Status', 'Done'),
-  Dropped: enumValue('Project.Status', 'Dropped'),
-}
-
-interface FakeFolder {
-  id: { primaryKey: string }
-  name: string
-  parent: FakeFolder | null
-}
-const folder = (
-  id: string,
-  name: string,
-  parent: FakeFolder | null = null,
-) => ({
-  id: { primaryKey: id },
-  name,
-  parent,
-})
-interface FakeProject {
-  id: { primaryKey: string }
-  name: string
-  note: string
-  status: object
-  parentFolder: FakeFolder | null
-  ending: string
-}
-const project = (
-  id: string,
-  name: string,
-  parentFolder: FakeFolder | null = null,
-  status: object = ProjectStatus.Active,
-) => ({
-  id: { primaryKey: id },
-  name,
-  note: '',
-  status,
-  parentFolder,
-  ending: `${id}.ending`,
-})
-
-let tasks: Array<FakeTask> = []
-let tags: Array<FakeTag> = []
-let projects: Array<FakeProject> = []
-let folders: Array<FakeFolder> = []
-let moves: Array<[ReadonlyArray<string>, unknown]> = []
-let ruleCalls: Array<ReadonlyArray<unknown>> = []
-let nextId = 1
-
-class FakeRule {
-  readonly ruleString: string
-  readonly scheduleType: object
-  readonly anchorDateKey: object
-  readonly catchUpAutomatically: boolean
-  constructor(
-    ruleString: string,
-    method: null,
-    scheduleType: object | null,
-    anchorDateKey: object | null,
-    catchUp: boolean | null,
-  ) {
-    ruleCalls.push([ruleString, method, scheduleType, anchorDateKey, catchUp])
-    if (!ruleString.startsWith('FREQ=')) throw new Error('Unknown rule')
-    this.ruleString = ruleString
-    this.scheduleType = scheduleType ?? Schedule.Regularly
-    this.anchorDateKey = anchorDateKey ?? Anchor.DueDate
-    this.catchUpAutomatically = catchUp ?? false
-  }
-}
-
-const nextDay = (date: Date | null) =>
-  date && new Date(date.getTime() + 24 * 60 * 60 * 1000)
-
-class FakeTask {
-  id = { primaryKey: `task-${nextId++}` }
-  note = ''
-  taskStatus = Status.Available
-  completed = false
-  deferDate: Date | null = null
-  dueDate: Date | null = null
-  plannedDate: Date | null = null
-  tags: Array<FakeTag> = []
-  children: Array<FakeTask> = []
-  parent: FakeTask | null = null
-  containingProject: FakeProject | null = null
-  project: FakeProject | null = null
-  repetitionRule: FakeRule | null = null
-  constructor(
-    public name: string,
-    public position?: unknown,
-  ) {
-    this.containingProject = projects.find((p) => p.ending === position) ?? null
-    tasks.push(this)
-  }
-  get effectiveDeferDate() {
-    return this.deferDate
-  }
-  addTags(more: ReadonlyArray<FakeTag>) {
-    this.tags = [...this.tags, ...more.filter((t) => !this.tags.includes(t))]
-  }
-  removeTags(less: ReadonlyArray<FakeTag>) {
-    this.tags = this.tags.filter((t) => !less.includes(t))
-  }
-  private resolve(status: object, completed: boolean) {
-    if (this.repetitionRule === null) {
-      this.taskStatus = status
-      this.completed = completed
-      return this
-    }
-    const clone = Object.assign(new FakeTask(this.name), {
-      note: this.note,
-      deferDate: this.deferDate,
-      dueDate: this.dueDate,
-      tags: this.tags,
-      repetitionRule: this.repetitionRule,
-      taskStatus: status,
-      completed,
-    })
-    this.deferDate = nextDay(this.deferDate)
-    this.dueDate = nextDay(this.dueDate)
-    return clone
-  }
-  markComplete() {
-    return this.resolve(Status.Completed, true)
-  }
-  drop(allOccurrences: boolean) {
-    if (allOccurrences) this.repetitionRule = null
-    this.resolve(Status.Dropped, false)
-  }
-}
-
-const globals = () => ({
-  Task: Object.assign(
-    function (name: string, position: unknown) {
-      return new FakeTask(name, position)
-    },
-    {
-      byIdentifier: (id: string) =>
-        tasks.find((t) => t.id.primaryKey === id) ?? null,
-      Status,
-      RepetitionRule: FakeRule,
-      RepetitionScheduleType: Schedule,
-      AnchorDateKey: Anchor,
-    },
-  ),
-  Tag: function (name: string, parent: FakeTag | null) {
-    const made = tag(`tag-${nextId++}`, name, parent)
-    tags.push(made)
-    return made
-  },
-  Project: Object.assign(
-    function (name: string, parentFolder: FakeFolder | null) {
-      const made = project(`project-${nextId++}`, name, parentFolder)
-      projects.push(made)
-      return made
-    },
-    { Status: ProjectStatus },
-  ),
-  Perspective: { Custom: { all: [] } },
-  get flattenedTasks() {
-    return [...tasks]
-  },
-  get flattenedTags() {
-    return [...tags]
-  },
-  get flattenedProjects() {
-    return [...projects]
-  },
-  get flattenedFolders() {
-    return [...folders]
-  },
-  get tags() {
-    return tags.filter((t) => t.parent === null)
-  },
-  inbox: { ending: 'inbox.ending' },
-  moveTasks: (moved: ReadonlyArray<FakeTask>, position: unknown) => {
-    moves.push([moved.map((t) => t.id.primaryKey), position])
-    for (const t of moved) {
-      t.containingProject = projects.find((p) => p.ending === position) ?? null
-    }
-  },
-  settings: {
-    objectForKey: (key: string) =>
-      ({ DefaultStartTime: '06:00:00', DefaultDueTime: '17:00' })[key],
-  },
-})
-
-const evaluate = <A>(script: Parameters<typeof program<A>>[0], args: A) =>
-  JSON.parse(runInNewContext(program(script, args), globals()) as string)
-
-const local = (y: number, mo: number, d: number, h: number, mi: number) =>
-  new Date(y, mo - 1, d, h, mi)
-
-let slot: FakeTag
-let morning: FakeTag
-let housekeeping: FakeProject
-beforeEach(() => {
-  tasks = []
-  ruleCalls = []
-  moves = []
-  slot = tag('slot', 'Slot')
-  morning = tag('morning', 'Morning', slot)
-  // Two tags named Errands: the top-level one is also a full path.
-  tags = [
-    slot,
-    morning,
-    tag('home', 'Home'),
-    tag('errands', 'Errands'),
-    tag('slot-errands', 'Errands', slot),
-    tag('evening', 'Evening', slot),
-    tag('evening2', 'Evening', tag('work', 'Work')),
-  ]
-  const domestic = folder('domestic', 'Domestic')
-  const home = folder('home', 'Home')
-  const work = folder('work', 'Work')
-  // Two folders named Lists.
-  folders = [
-    domestic,
-    home,
-    work,
-    folder('home-lists', 'Lists', home),
-    folder('work-lists', 'Lists', work),
-  ]
-  housekeeping = project('housekeeping', 'Housekeeping', domestic)
-  // Two projects named Garden: the top-level one is also a full path.
-  projects = [
-    housekeeping,
-    project('garden', 'Garden'),
-    project('domestic-garden', 'Garden', domestic),
-    project('home-shopping', 'Shopping', home),
-    project('work-shopping', 'Shopping', work),
-    project('bikes', 'Bikes', null, ProjectStatus.OnHold),
-    project('taxes', 'Taxes', null, ProjectStatus.Done),
-    project('cello', 'Cello', null, ProjectStatus.Dropped),
-    // An old completed Reading and the open one share a path.
-    project('reading-2025', 'Reading', null, ProjectStatus.Done),
-    project('reading', 'Reading'),
-    project('old-cello', 'Cello', null, ProjectStatus.Done),
-  ]
-})
+beforeEach(reset)
 
 const strange = `Call "Dad" about Zoë's \\ backslash\nsecond line 🎉`
 
@@ -432,9 +159,6 @@ describe('createTask', () => {
   })
 })
 
-const existing = (fields: Partial<FakeTask> = {}) =>
-  Object.assign(new FakeTask('Existing'), fields)
-
 describe('updateTask', () => {
   test('leaves out what is omitted and removes what is named in clear', () => {
     const task = existing({
@@ -494,7 +218,7 @@ describe('updateTask', () => {
         false,
       ),
     })
-    ruleCalls = []
+    ruleCalls.length = 0
 
     const reply = evaluate(updateTask, {
       id: task.id.primaryKey,
@@ -816,101 +540,6 @@ describe('completeTasks', () => {
   })
 })
 
-describe('createTag', () => {
-  test('makes a top-level tag, or one inside a parent given by path, and answers with its full path', () => {
-    expect(evaluate(createTag, { name: 'Errand run' })).toMatchObject({
-      tag: { name: 'Errand run', path: 'Errand run', status: 'Active' },
-      created: true,
-    })
-    expect(
-      evaluate(createTag, { name: 'School run', parent: 'Slot' }),
-    ).toMatchObject({ tag: { path: 'Slot/School run' }, created: true })
-  })
-
-  test('a tag already in that place is returned as it is, so a retry makes no second one', () => {
-    const before = tags.length
-
-    expect(evaluate(createTag, { name: 'Morning', parent: 'Slot' })).toEqual({
-      tag: {
-        id: 'morning',
-        name: 'Morning',
-        path: 'Slot/Morning',
-        status: 'Active',
-      },
-      created: false,
-    })
-    expect(evaluate(createTag, { name: 'Morning' }).created).toBe(true)
-    expect(tags.length).toBe(before + 1)
-  })
-
-  test('an unknown or ambiguous parent makes nothing', () => {
-    const before = tags.length
-
-    expect(evaluate(createTag, { name: 'x', parent: 'Nope' })._tag).toBe(
-      'OmniFocusTagNotFound',
-    )
-    expect(evaluate(createTag, { name: 'x', parent: 'Evening' })._tag).toBe(
-      'OmniFocusTagAmbiguous',
-    )
-    expect(tags.length).toBe(before)
-  })
-})
-
-describe('createProject', () => {
-  test('makes a project at the top level, or in a folder given by path, with a note', () => {
-    expect(evaluate(createProject, { name: 'School run' })).toMatchObject({
-      project: { name: 'School run', path: 'School run', status: 'Active' },
-      created: true,
-    })
-    const reply = evaluate(createProject, {
-      name: 'Groceries',
-      folder: 'Home/Lists',
-      note: 'weekly',
-    })
-    expect(reply).toMatchObject({
-      project: { path: 'Home/Lists/Groceries' },
-      created: true,
-    })
-    expect(projects.at(-1)?.note).toBe('weekly')
-  })
-
-  test('an open project already in that folder is returned as it is; a completed one does not count', () => {
-    const before = projects.length
-
-    expect(
-      evaluate(createProject, { name: 'Housekeeping', folder: 'Domestic' }),
-    ).toEqual({
-      project: {
-        id: 'housekeeping',
-        name: 'Housekeeping',
-        path: 'Domestic/Housekeeping',
-        status: 'Active',
-      },
-      created: false,
-    })
-    expect(evaluate(createProject, { name: 'Bikes' }).created).toBe(false)
-    expect(evaluate(createProject, { name: 'Taxes' }).created).toBe(true)
-    expect(evaluate(createProject, { name: 'Housekeeping' }).created).toBe(true)
-    expect(projects.length).toBe(before + 2)
-  })
-
-  test('an unknown or ambiguous folder makes nothing', () => {
-    const before = projects.length
-
-    expect(evaluate(createProject, { name: 'x', folder: 'Nope' })).toEqual({
-      _tag: 'OmniFocusFolderNotFound',
-      message:
-        'No OmniFocus folder has the id, path or name "Nope". Folders are never created. Nothing changed.',
-    })
-    expect(evaluate(createProject, { name: 'x', folder: 'Lists' })).toEqual({
-      _tag: 'OmniFocusFolderAmbiguous',
-      message:
-        '"Lists" could be any of "Home/Lists" (id home-lists), "Work/Lists" (id work-lists); give the full path or the id. Nothing changed.',
-    })
-    expect(projects.length).toBe(before)
-  })
-})
-
 describe('findTasks', () => {
   const find = (args: FindTasksParams, limit = 100) =>
     evaluate(findTasks, { ...args, limit })
@@ -992,81 +621,5 @@ describe('findTasks', () => {
       tasks: [{ name: 'a' }, { name: 'b' }],
       omitted: 1,
     })
-  })
-})
-
-describe('read scripts', () => {
-  test('snapshot holds open tasks only, with the fields perspective rules look at', () => {
-    existing({ tags: [morning], deferDate: local(2026, 11, 1, 6, 0) })
-    existing({ taskStatus: Status.Completed })
-    existing({ taskStatus: Status.Dropped })
-    const parent = existing({ taskStatus: Status.Next })
-    parent.children = [existing()]
-
-    const reply = evaluate(snapshot, {})
-
-    expect(
-      reply.tasks.map(
-        (t: { status: string; tagIds: unknown; leaf: boolean }) => [
-          t.status,
-          t.tagIds,
-          t.leaf,
-        ],
-      ),
-    ).toEqual([
-      ['Available', ['morning'], true],
-      ['Next', [], false],
-      ['Available', [], true],
-    ])
-    expect(reply.tasks[0].effectiveDeferDate).toBe('2026-11-01 06:00')
-    expect(reply.tags[1]).toEqual({
-      id: 'morning',
-      name: 'Morning',
-      parentId: 'slot',
-    })
-  })
-
-  test("a task's project is the full path of its containing project", () => {
-    existing({
-      containingProject: project(
-        'garden',
-        'Garden',
-        folder('outside', 'Outside', folder('domestic', 'Domestic')),
-      ),
-    })
-    existing({ containingProject: housekeeping })
-    existing()
-
-    expect(
-      evaluate(snapshot, {}).tasks.map((t: { project: unknown }) => t.project),
-    ).toEqual(['Domestic/Outside/Garden', 'Domestic/Housekeeping', null])
-  })
-
-  test('listTags gives each tag its full path and status', () => {
-    expect(evaluate(listTags, {}).tags[1]).toEqual({
-      id: 'morning',
-      name: 'Morning',
-      path: 'Slot/Morning',
-      status: 'Active',
-    })
-  })
-
-  test('listProjects gives every project its full path and status, in OmniFocus order', () => {
-    projects = [
-      housekeeping,
-      project('taxes', 'Taxes', null, ProjectStatus.Done),
-      project('bikes', 'Bikes', null, ProjectStatus.OnHold),
-    ]
-
-    expect(evaluate(listProjects, {}).projects).toEqual([
-      {
-        id: 'housekeeping',
-        name: 'Housekeeping',
-        path: 'Domestic/Housekeeping',
-        status: 'Active',
-      },
-      { id: 'taxes', name: 'Taxes', path: 'Taxes', status: 'Done' },
-      { id: 'bikes', name: 'Bikes', path: 'Bikes', status: 'OnHold' },
-    ])
   })
 })
