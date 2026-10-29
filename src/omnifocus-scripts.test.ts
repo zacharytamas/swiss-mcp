@@ -585,6 +585,21 @@ describe('findTasks', () => {
     expect(names(find({ tag: 'Slot/Evening' }))).toEqual(['Read'])
   })
 
+  test('a path names every project or tag that also has it as a name, but an id only its own', () => {
+    const at = (id: string) =>
+      projects.find((p) => p.id.primaryKey === id) ?? null
+    const errands = tags.filter((t) => t.name === 'Errands')
+    existing({ name: 'Weed', containingProject: at('garden') })
+    existing({ name: 'Mow', containingProject: at('domestic-garden') })
+    existing({ name: 'Post office', tags: errands.slice(0, 1) })
+    existing({ name: 'Bank', tags: errands.slice(1) })
+
+    expect(names(find({ project: 'Garden' }))).toEqual(['Weed', 'Mow'])
+    expect(names(find({ project: 'garden' }))).toEqual(['Weed'])
+    expect(names(find({ tag: 'Errands' }))).toEqual(['Post office', 'Bank'])
+    expect(names(find({ tag: 'errands' }))).toEqual(['Post office'])
+  })
+
   test('a project matches closed projects too, every project with that name, and combines with the rest', () => {
     const at = (id: string) =>
       projects.find((p) => p.id.primaryKey === id) ?? null

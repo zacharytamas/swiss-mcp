@@ -473,8 +473,8 @@ export const createProject: Script<CreateProjectParams> = (args, omni) => {
   return { project: omni.projectInfo(project), created: true }
 }
 
-// A search, so a project or tag matches every project or tag it could name, closed ones included, and a tag also
-// matches the tags nested under it, as OmniFocus's own tag rules do.
+// A search, so a project or tag matches every project or tag it could name by path or name, closed ones included, and
+// a tag also matches the tags nested under it, as OmniFocus's own tag rules do.
 export const findTasks: Script<FindTasksParams & { limit: number }> = (
   args,
   omni,
@@ -489,8 +489,7 @@ export const findTasks: Script<FindTasksParams & { limit: number }> = (
           omni.firstMatch(
             flattenedProjects,
             (p) => p.id.primaryKey === projectRef,
-            (p) => omni.projectPath(p) === projectRef,
-            (p) => p.name === projectRef,
+            (p) => omni.projectPath(p) === projectRef || p.name === projectRef,
           ),
         )
   if (projectIds?.size === 0) {
@@ -507,8 +506,7 @@ export const findTasks: Script<FindTasksParams & { limit: number }> = (
           omni.firstMatch(
             flattenedTags,
             (t) => t.id.primaryKey === tagRef,
-            (t) => omni.tagPath(t) === tagRef,
-            (t) => t.name === tagRef,
+            (t) => omni.tagPath(t) === tagRef || t.name === tagRef,
           ),
         )
   if (tagIds?.size === 0) {
