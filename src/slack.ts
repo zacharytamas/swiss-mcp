@@ -323,9 +323,22 @@ const INLINE_CONTAINERS = new Set([
   'rich_text_preformatted',
   'rich_text_quote',
 ])
+const isInline = (n: MrkdwnNode): n is InlineNode =>
+  n.type !== 'preformatted' && n.type !== 'quote'
+// Code holds only a string, so it styles plain text alone. The other styles wrap any inline node.
+const styled = (style: RawBlock['style'], nodes: Nodes): Nodes => {
+  if (!style || !nodes.every(isInline)) return nodes
+  let out: ReadonlyArray<InlineNode> = nodes
+  if (style.code && out.every((n) => n.type === 'text'))
+    out = [{ type: 'code', value: out.map((n) => n.value).join('') }]
+  if (style.strike) out = [{ type: 'strike', children: [...out] }]
+  if (style.italic) out = [{ type: 'italic', children: [...out] }]
+  if (style.bold) out = [{ type: 'bold', children: [...out] }]
+  return out
+}
 const richText = (e: RawBlock): Nodes => {
   const known = inline.get(e.type)
-  if (known) return known(e)
+  if (known) return styled(e.style, known(e))
   const children = (e.elements ?? []).map(richText)
   return INLINE_CONTAINERS.has(e.type)
     ? children.flat()
