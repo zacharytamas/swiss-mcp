@@ -187,12 +187,23 @@ const channels: Record<string, Raw[]> = {
             },
             {
               type: 'rich_text_list',
+              style: 'bullet',
               elements: [
                 {
                   type: 'rich_text_section',
                   elements: [{ type: 'channel', channel_id: 'CGEN' }],
                 },
               ],
+            },
+          ],
+        },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              style: 'primary',
+              text: { type: 'plain_text', text: 'Approve' },
             },
           ],
         },
