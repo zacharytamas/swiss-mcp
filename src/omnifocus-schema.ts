@@ -394,7 +394,7 @@ export const CompleteTasksParams = Schema.Struct({
       skip: Omittable(
         Schema.Boolean.annotate({
           description:
-            'true drops just this occurrence of a repeating task instead of completing it, so the task moves on to its next occurrence. A task that does not repeat is OmniFocusNotRepeating.',
+            'true drops just this occurrence of a repeating task instead of completing it, so the task moves on to its next occurrence. Only for a task that repeats.',
         }),
       ),
     }),
