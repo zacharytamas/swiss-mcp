@@ -110,7 +110,7 @@ const dueTool = <
 
 const noMatch = 'an empty list means none matched'
 const unknownTimer =
-  'The name must match a Due timer exactly; an unknown name times out with ShortcutTimedOut after 10 seconds and nothing changes.'
+  'The name must match a Due timer exactly; an unknown name fails after a 10-second timeout and nothing changes.'
 
 export const DueToolkit = Toolkit.make(
   dueTool(
