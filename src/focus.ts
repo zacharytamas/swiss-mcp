@@ -10,19 +10,20 @@ const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
 
   // The read after a run happens in a finalizer, which nothing else would cut short.
-  const stdout = (bin: string, args: ReadonlyArray<string>) =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const handle = yield* spawner.spawn(
-          ChildProcess.make(bin, args, { stdin: 'ignore', stderr: 'ignore' }),
-        )
-        const [out, code] = yield* Effect.all(
-          [Stream.mkString(Stream.decodeText(handle.stdout)), handle.exitCode],
-          { concurrency: 'unbounded' },
-        )
-        return code === 0 ? Option.some(out) : Option.none<string>()
-      }),
-    ).pipe(Effect.timeout('1 second'))
+  const stdout = Effect.fn('Focus.stdout')(
+    function* (bin: string, args: ReadonlyArray<string>) {
+      const handle = yield* spawner.spawn(
+        ChildProcess.make(bin, args, { stdin: 'ignore', stderr: 'ignore' }),
+      )
+      const [out, code] = yield* Effect.all(
+        [Stream.mkString(Stream.decodeText(handle.stdout)), handle.exitCode],
+        { concurrency: 'unbounded' },
+      )
+      return code === 0 ? Option.some(out) : Option.none<string>()
+    },
+    Effect.scoped,
+    Effect.timeout('1 second'),
+  )
 
   // `lsappinfo info -only bundleid front` prints nothing, so the front app's ASN is looked up first.
   const frontmost = Effect.gen(function* () {

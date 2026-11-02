@@ -79,25 +79,22 @@ const make = Effect.gen(function* () {
   // OmniFocus handles one Apple Event at a time, so calls queue here rather than pile up there.
   const lock = yield* Semaphore.make(1)
 
-  const exec = (source: string) =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const handle = yield* spawner.spawn(
-          ChildProcess.make(bin, ['-l', 'JavaScript', '-e', JXA, source], {
-            stdin: 'ignore',
-          }),
-        )
-        const [stdout, stderr, code] = yield* Effect.all(
-          [
-            Stream.mkString(Stream.decodeText(handle.stdout)),
-            Stream.mkString(Stream.decodeText(handle.stderr)),
-            handle.exitCode,
-          ],
-          { concurrency: 'unbounded' },
-        )
-        return { stdout, stderr, code: Number(code) }
+  const exec = Effect.fn('OmniFocus.exec')(function* (source: string) {
+    const handle = yield* spawner.spawn(
+      ChildProcess.make(bin, ['-l', 'JavaScript', '-e', JXA, source], {
+        stdin: 'ignore',
       }),
     )
+    const [stdout, stderr, code] = yield* Effect.all(
+      [
+        Stream.mkString(Stream.decodeText(handle.stdout)),
+        Stream.mkString(Stream.decodeText(handle.stderr)),
+        handle.exitCode,
+      ],
+      { concurrency: 'unbounded' },
+    )
+    return { stdout, stderr, code: Number(code) }
+  }, Effect.scoped)
 
   const evaluate = Effect.fn('OmniFocus.evaluate')(function* <
     O extends JsonCodec,

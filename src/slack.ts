@@ -80,74 +80,75 @@ export class SlackApi extends Context.Service<
         Config.withDefault('https://slack.com/api'),
       )
 
-      const call = <S extends Schema.Codec<unknown, unknown>>(
+      const call = Effect.fn('SlackApi.call')(function* <
+        S extends Schema.Codec<unknown, unknown>,
+      >(
         method: string,
         params: Params,
         response: S,
-      ): Effect.Effect<S['Type'], SlackError> =>
-        Effect.gen(function* () {
-          if (Option.isNone(token)) {
-            return yield* new SlackNotConfigured({
-              message:
-                'Set SLACK_USER_TOKEN to a Slack user token (xoxp-…) in the MCP server environment.',
-            })
-          }
-          const body = new URLSearchParams()
-          for (const [key, value] of Object.entries(params)) {
-            if (value !== undefined) body.set(key, String(value))
-          }
-          const failed = (message: string) =>
-            new SlackRequestFailed({ method, message: `${method}: ${message}` })
+      ): Effect.fn.Return<S['Type'], SlackError> {
+        if (Option.isNone(token)) {
+          return yield* new SlackNotConfigured({
+            message:
+              'Set SLACK_USER_TOKEN to a Slack user token (xoxp-…) in the MCP server environment.',
+          })
+        }
+        const body = new URLSearchParams()
+        for (const [key, value] of Object.entries(params)) {
+          if (value !== undefined) body.set(key, String(value))
+        }
+        const failed = (message: string) =>
+          new SlackRequestFailed({ method, message: `${method}: ${message}` })
 
-          for (let attempt = 0; ; attempt++) {
-            const res = yield* Effect.tryPromise({
-              try: () =>
-                fetch(`${base}/${method}`, {
-                  method: 'POST',
-                  headers: {
-                    authorization: `Bearer ${Redacted.value(token.value)}`,
-                    'content-type': 'application/x-www-form-urlencoded',
-                  },
-                  body,
-                }),
-              catch: (cause) => failed(String(cause)),
-            })
-            if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
-              const seconds = Number(res.headers.get('retry-after') ?? '5')
-              yield* Effect.sleep(`${Math.min(seconds, 60)} seconds`)
-              continue
-            }
-            const json = yield* Effect.tryPromise({
-              try: () => res.json() as Promise<unknown>,
-              catch: () => failed(`HTTP ${res.status} with a non-JSON body`),
-            })
-            const envelope = yield* Schema.decodeUnknownEffect(
-              Schema.Struct({
-                ok: Schema.Boolean,
-                error: Schema.optional(Schema.String),
-                needed: Schema.optional(Schema.String),
+        for (let attempt = 0; ; attempt++) {
+          const res = yield* Effect.tryPromise({
+            try: () =>
+              fetch(`${base}/${method}`, {
+                method: 'POST',
+                headers: {
+                  authorization: `Bearer ${Redacted.value(token.value)}`,
+                  'content-type': 'application/x-www-form-urlencoded',
+                },
+                body,
               }),
-            )(json).pipe(Effect.mapError((e) => failed(e.message)))
-            if (!envelope.ok) {
-              const code = envelope.error ?? 'unknown_error'
-              return yield* new SlackApiError({
-                method,
-                code,
-                message:
-                  code === 'missing_scope'
-                    ? `${method} needs the ${envelope.needed ?? 'unknown'} scope. Add it under User Token Scopes in the Slack app settings and reinstall the app.`
-                    : code === 'ratelimited'
-                      ? `${method} is still rate limited after ${MAX_RATE_LIMIT_RETRIES} retries; try again in a minute.`
-                      : `${method} failed: ${code}`,
-              })
-            }
-            return yield* Schema.decodeUnknownEffect(response)(json).pipe(
-              Effect.mapError((e) =>
-                failed(`unexpected response shape: ${e.message}`),
-              ),
-            )
+            catch: (cause) => failed(String(cause)),
+          })
+          if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+            const seconds = Number(res.headers.get('retry-after') ?? '5')
+            yield* Effect.sleep(`${Math.min(seconds, 60)} seconds`)
+            continue
           }
-        })
+          const json = yield* Effect.tryPromise({
+            try: () => res.json() as Promise<unknown>,
+            catch: () => failed(`HTTP ${res.status} with a non-JSON body`),
+          })
+          const envelope = yield* Schema.decodeUnknownEffect(
+            Schema.Struct({
+              ok: Schema.Boolean,
+              error: Schema.optional(Schema.String),
+              needed: Schema.optional(Schema.String),
+            }),
+          )(json).pipe(Effect.mapError((e) => failed(e.message)))
+          if (!envelope.ok) {
+            const code = envelope.error ?? 'unknown_error'
+            return yield* new SlackApiError({
+              method,
+              code,
+              message:
+                code === 'missing_scope'
+                  ? `${method} needs the ${envelope.needed ?? 'unknown'} scope. Add it under User Token Scopes in the Slack app settings and reinstall the app.`
+                  : code === 'ratelimited'
+                    ? `${method} is still rate limited after ${MAX_RATE_LIMIT_RETRIES} retries; try again in a minute.`
+                    : `${method} failed: ${code}`,
+            })
+          }
+          return yield* Schema.decodeUnknownEffect(response)(json).pipe(
+            Effect.mapError((e) =>
+              failed(`unexpected response shape: ${e.message}`),
+            ),
+          )
+        }
+      })
 
       return SlackApi.of({ call })
     }),
@@ -458,31 +459,27 @@ const make = Effect.gen(function* () {
   let usergroups: ReadonlyArray<UsergroupInfo> | undefined
   let self: { id: string; name: string; url: string } | undefined
 
-  const user = (id: string) =>
-    Effect.gen(function* () {
-      const hit = users.get(id)
-      if (hit) return hit
-      const { user: u } = yield* api.call('users.info', { user: id }, UsersInfo)
-      const info: UserInfo = {
-        id: u.id,
-        name:
-          u.profile.display_name ||
-          u.profile.real_name ||
-          u.real_name ||
-          u.name,
-        handle: u.name,
-        isBot: u.is_bot ?? false,
-        deleted: u.deleted ?? false,
-        ...defined({
-          realName: u.profile.real_name || u.real_name || undefined,
-          title: u.profile.title || undefined,
-          email: u.profile.email || undefined,
-          timezone: u.tz || undefined,
-        }),
-      }
-      users.set(id, info)
-      return info
-    })
+  const user = Effect.fn('Slack.user')(function* (id: string) {
+    const hit = users.get(id)
+    if (hit) return hit
+    const { user: u } = yield* api.call('users.info', { user: id }, UsersInfo)
+    const info: UserInfo = {
+      id: u.id,
+      name:
+        u.profile.display_name || u.profile.real_name || u.real_name || u.name,
+      handle: u.name,
+      isBot: u.is_bot ?? false,
+      deleted: u.deleted ?? false,
+      ...defined({
+        realName: u.profile.real_name || u.real_name || undefined,
+        title: u.profile.title || undefined,
+        email: u.profile.email || undefined,
+        timezone: u.tz || undefined,
+      }),
+    }
+    users.set(id, info)
+    return info
+  })
 
   const userName = (id: string) =>
     user(id).pipe(
@@ -501,32 +498,31 @@ const make = Effect.gen(function* () {
     return self
   })
 
-  const channel = (id: string) =>
-    Effect.gen(function* () {
-      const hit = channels.get(id)
-      if (hit) return hit
-      const { channel: c } = yield* api.call(
-        'conversations.info',
-        { channel: id },
-        ConversationsInfo,
-      )
-      const kind = kindOf(c)
-      const info: ChannelInfo = {
-        id: c.id,
-        kind,
-        name:
-          c.is_im && c.user ? `@${yield* userName(c.user)}` : (c.name ?? c.id),
-        archived: c.is_archived ?? false,
-        ...defined({
-          dmWith: c.user,
-          members: c.num_members,
-          topic: c.topic?.value || undefined,
-          purpose: c.purpose?.value || undefined,
-        }),
-      }
-      channels.set(id, info)
-      return info
-    })
+  const channel = Effect.fn('Slack.channel')(function* (id: string) {
+    const hit = channels.get(id)
+    if (hit) return hit
+    const { channel: c } = yield* api.call(
+      'conversations.info',
+      { channel: id },
+      ConversationsInfo,
+    )
+    const kind = kindOf(c)
+    const info: ChannelInfo = {
+      id: c.id,
+      kind,
+      name:
+        c.is_im && c.user ? `@${yield* userName(c.user)}` : (c.name ?? c.id),
+      archived: c.is_archived ?? false,
+      ...defined({
+        dmWith: c.user,
+        members: c.num_members,
+        topic: c.topic?.value || undefined,
+        purpose: c.purpose?.value || undefined,
+      }),
+    }
+    channels.set(id, info)
+    return info
+  })
 
   const channelRef = (id: string) =>
     channel(id).pipe(
@@ -556,101 +552,100 @@ const make = Effect.gen(function* () {
     }
   }
 
-  const render = (parts: ReadonlyArray<Nodes>) =>
-    Effect.gen(function* () {
-      const nodes = parts.flatMap((part) => [...walk(part)])
-      const ids = (type: 'user' | 'channel' | 'usergroup') => [
-        ...new Set(
-          nodes.flatMap((n) =>
-            n.type === type && !('label' in n && n.label) ? [n.id] : [],
+  const render = Effect.fn('Slack.render')(function* (
+    parts: ReadonlyArray<Nodes>,
+  ) {
+    const nodes = parts.flatMap((part) => [...walk(part)])
+    const ids = (type: 'user' | 'channel' | 'usergroup') => [
+      ...new Set(
+        nodes.flatMap((n) =>
+          n.type === type && !('label' in n && n.label) ? [n.id] : [],
+        ),
+      ),
+    ]
+    const names = new Map(
+      yield* Effect.forEach(
+        ids('user'),
+        (id) => userName(id).pipe(Effect.map((name) => [id, name] as const)),
+        { concurrency: 4 },
+      ),
+    )
+    const channelNames = new Map(
+      yield* Effect.forEach(
+        ids('channel'),
+        (id) =>
+          channel(id).pipe(
+            Effect.map((c) => [id, c.name] as const),
+            Effect.orElseSucceed(() => [id, id] as const),
           ),
-        ),
-      ]
-      const names = new Map(
-        yield* Effect.forEach(
-          ids('user'),
-          (id) => userName(id).pipe(Effect.map((name) => [id, name] as const)),
-          { concurrency: 4 },
-        ),
-      )
-      const channelNames = new Map(
-        yield* Effect.forEach(
-          ids('channel'),
-          (id) =>
-            channel(id).pipe(
-              Effect.map((c) => [id, c.name] as const),
-              Effect.orElseSucceed(() => [id, id] as const),
-            ),
-          { concurrency: 4 },
-        ),
-      )
-      const groups = ids('usergroup').length
-        ? yield* allUsergroups.pipe(Effect.orElseSucceed(() => []))
-        : []
-      const handle = (id: string) =>
-        groups.find((g) => g.id === id)?.handle ?? id
-      const show = (node: MrkdwnNode): string => {
-        switch (node.type) {
-          case 'text':
-            return node.value
-          case 'code':
-            return `\`${node.value}\``
-          case 'preformatted':
-            return `\`\`\`\n${node.value}\n\`\`\``
-          case 'bold':
-            return `*${node.children.map(show).join('')}*`
-          case 'italic':
-            return `_${node.children.map(show).join('')}_`
-          case 'strike':
-            return `~${node.children.map(show).join('')}~`
-          case 'quote':
-            return node.children
-              .map(show)
-              .join('')
-              .split('\n')
-              .map((line) => `> ${line}`)
-              .join('\n')
-          case 'user':
-            return `@${node.label ?? names.get(node.id) ?? node.id}`
-          case 'channel':
-            return `#${node.label ?? channelNames.get(node.id) ?? node.id}`
-          case 'usergroup':
-            return node.label
-              ? node.label.startsWith('@')
-                ? node.label
-                : `@${node.label}`
-              : `@${handle(node.id)}`
-          case 'broadcast':
-            return `@${node.range}`
-          case 'date':
-            return node.fallback
-          case 'emoji':
-            return `:${node.name}:${node.skinTone ? `:skin-tone-${node.skinTone}:` : ''}`
-          case 'link': {
-            const label = node.children?.map(show).join('')
-            if (node.url.startsWith('mailto:')) {
-              return label || node.url.slice('mailto:'.length)
-            }
-            return label ? `[${label}](${node.url})` : node.url
+        { concurrency: 4 },
+      ),
+    )
+    const groups = ids('usergroup').length
+      ? yield* allUsergroups.pipe(Effect.orElseSucceed(() => []))
+      : []
+    const handle = (id: string) => groups.find((g) => g.id === id)?.handle ?? id
+    const show = (node: MrkdwnNode): string => {
+      switch (node.type) {
+        case 'text':
+          return node.value
+        case 'code':
+          return `\`${node.value}\``
+        case 'preformatted':
+          return `\`\`\`\n${node.value}\n\`\`\``
+        case 'bold':
+          return `*${node.children.map(show).join('')}*`
+        case 'italic':
+          return `_${node.children.map(show).join('')}_`
+        case 'strike':
+          return `~${node.children.map(show).join('')}~`
+        case 'quote':
+          return node.children
+            .map(show)
+            .join('')
+            .split('\n')
+            .map((line) => `> ${line}`)
+            .join('\n')
+        case 'user':
+          return `@${node.label ?? names.get(node.id) ?? node.id}`
+        case 'channel':
+          return `#${node.label ?? channelNames.get(node.id) ?? node.id}`
+        case 'usergroup':
+          return node.label
+            ? node.label.startsWith('@')
+              ? node.label
+              : `@${node.label}`
+            : `@${handle(node.id)}`
+        case 'broadcast':
+          return `@${node.range}`
+        case 'date':
+          return node.fallback
+        case 'emoji':
+          return `:${node.name}:${node.skinTone ? `:skin-tone-${node.skinTone}:` : ''}`
+        case 'link': {
+          const label = node.children?.map(show).join('')
+          if (node.url.startsWith('mailto:')) {
+            return label || node.url.slice('mailto:'.length)
           }
+          return label ? `[${label}](${node.url})` : node.url
         }
       }
-      // `parse` drops the line break on each side of a fence or quote, so it comes back between it and its neighbours.
-      const isBlock = (n: MrkdwnNode | undefined) =>
-        n?.type === 'preformatted' || n?.type === 'quote'
-      return parts
-        .map((part) =>
-          part
-            .map(
-              (n, i) =>
-                (i && (isBlock(n) || isBlock(part[i - 1])) ? '\n' : '') +
-                show(n),
-            )
-            .join(''),
-        )
-        .filter(Boolean)
-        .join('\n')
-    })
+    }
+    // `parse` drops the line break on each side of a fence or quote, so it comes back between it and its neighbours.
+    const isBlock = (n: MrkdwnNode | undefined) =>
+      n?.type === 'preformatted' || n?.type === 'quote'
+    return parts
+      .map((part) =>
+        part
+          .map(
+            (n, i) =>
+              (i && (isBlock(n) || isBlock(part[i - 1])) ? '\n' : '') + show(n),
+          )
+          .join(''),
+      )
+      .filter(Boolean)
+      .join('\n')
+  })
 
   const permalinkFor = (
     base: string,
@@ -664,315 +659,317 @@ const make = Effect.gen(function* () {
         : ''
     }`
 
-  const fromRaw = (raw: RawMessage, ref: ChannelRef) =>
-    Effect.gen(function* () {
-      const { id: myId, url } = yield* me
-      const authorId = raw.user ?? ''
-      return {
-        channel: ref,
-        ts: raw.ts,
-        ...(raw.thread_ts ? { threadTs: raw.thread_ts } : {}),
-        author: {
-          id: authorId,
-          name: authorId
-            ? yield* userName(authorId)
-            : (raw.username ?? 'unknown'),
-        },
-        fromMe: authorId === myId,
-        text: yield* render(markupOf(raw)),
-        permalink: permalinkFor(url, ref.id, raw.ts, raw.thread_ts),
-        ...(raw.reply_count ? { replyCount: raw.reply_count } : {}),
-        ...(raw.reactions
-          ? {
-              reactions: raw.reactions.map((r) => ({
-                name: r.name,
-                count: r.count ?? r.users.length,
-                byMe: r.users.includes(myId),
-              })),
-            }
-          : {}),
-      } satisfies Message
-    })
+  const fromRaw = Effect.fn('Slack.fromRaw')(function* (
+    raw: RawMessage,
+    ref: ChannelRef,
+  ) {
+    const { id: myId, url } = yield* me
+    const authorId = raw.user ?? ''
+    return {
+      channel: ref,
+      ts: raw.ts,
+      ...(raw.thread_ts ? { threadTs: raw.thread_ts } : {}),
+      author: {
+        id: authorId,
+        name: authorId
+          ? yield* userName(authorId)
+          : (raw.username ?? 'unknown'),
+      },
+      fromMe: authorId === myId,
+      text: yield* render(markupOf(raw)),
+      permalink: permalinkFor(url, ref.id, raw.ts, raw.thread_ts),
+      ...(raw.reply_count ? { replyCount: raw.reply_count } : {}),
+      ...(raw.reactions
+        ? {
+            reactions: raw.reactions.map((r) => ({
+              name: r.name,
+              count: r.count ?? r.users.length,
+              byMe: r.users.includes(myId),
+            })),
+          }
+        : {}),
+    } satisfies Message
+  })
 
-  const fromMatch = (m: RawSearchMatch) =>
-    Effect.gen(function* () {
-      const { id: myId } = yield* me
-      // search.messages documents `type: "im"` for DMs; `channel.is_im` is also sent but undocumented.
-      const kind = m.type === 'im' ? 'dm' : kindOf(m.channel)
-      // For a DM, search names the channel after the other person's user ID.
-      const name =
-        kind === 'dm' ? `@${yield* userName(m.channel.name)}` : m.channel.name
-      const threadTs = parsePermalink(m.permalink)?.threadTs
-      const authorId = m.user ?? ''
-      return {
-        channel: { id: m.channel.id, name, kind },
-        ts: m.ts,
-        ...(threadTs ? { threadTs } : {}),
-        author: {
-          id: authorId,
-          name: authorId
-            ? yield* userName(authorId)
-            : (m.username ?? 'unknown'),
-        },
-        fromMe: authorId === myId,
-        text: yield* render(markupOf(m)),
-        permalink: m.permalink,
-      } satisfies Message
-    })
+  const fromMatch = Effect.fn('Slack.fromMatch')(function* (m: RawSearchMatch) {
+    const { id: myId } = yield* me
+    // search.messages documents `type: "im"` for DMs; `channel.is_im` is also sent but undocumented.
+    const kind = m.type === 'im' ? 'dm' : kindOf(m.channel)
+    // For a DM, search names the channel after the other person's user ID.
+    const name =
+      kind === 'dm' ? `@${yield* userName(m.channel.name)}` : m.channel.name
+    const threadTs = parsePermalink(m.permalink)?.threadTs
+    const authorId = m.user ?? ''
+    return {
+      channel: { id: m.channel.id, name, kind },
+      ts: m.ts,
+      ...(threadTs ? { threadTs } : {}),
+      author: {
+        id: authorId,
+        name: authorId ? yield* userName(authorId) : (m.username ?? 'unknown'),
+      },
+      fromMe: authorId === myId,
+      text: yield* render(markupOf(m)),
+      permalink: m.permalink,
+    } satisfies Message
+  })
 
   // `keep` filters while paging, so `limit` counts only kept matches. Slack serves at most 100 pages.
-  const search = (
+  const search = Effect.fn('Slack.search')(function* (
     query: string,
     limit: number,
     sort: 'timestamp' | 'score',
     keep: (m: RawSearchMatch) => boolean = () => true,
-  ) =>
-    Effect.gen(function* () {
-      const matches: RawSearchMatch[] = []
-      let total = 0
-      let seen = 0
-      for (let page = 1; matches.length < limit && page <= 100; page++) {
-        const res = yield* api.call(
-          'search.messages',
-          { query, count: 100, page, sort, sort_dir: 'desc' },
-          SearchMessages,
-        )
-        total = res.messages.total
-        seen += res.messages.matches.length
-        matches.push(...res.messages.matches.filter(keep))
-        if (res.messages.matches.length === 0 || seen >= total) break
-      }
-      return { total, matches: matches.slice(0, limit) }
-    })
+  ) {
+    const matches: RawSearchMatch[] = []
+    let total = 0
+    let seen = 0
+    for (let page = 1; matches.length < limit && page <= 100; page++) {
+      const res = yield* api.call(
+        'search.messages',
+        { query, count: 100, page, sort, sort_dir: 'desc' },
+        SearchMessages,
+      )
+      total = res.messages.total
+      seen += res.messages.matches.length
+      matches.push(...res.messages.matches.filter(keep))
+      if (res.messages.matches.length === 0 || seen >= total) break
+    }
+    return { total, matches: matches.slice(0, limit) }
+  })
 
   // Pages conversations.history or conversations.replies until `max` messages, returned oldest first.
-  const pages = (
+  const pages = Effect.fn('Slack.pages')(function* (
     method: 'conversations.history' | 'conversations.replies',
     params: Params,
     max: number,
-  ) =>
-    Effect.gen(function* () {
-      const out: RawMessage[] = []
-      let cursor: string | undefined
-      let hasMore = false
-      do {
-        const res = yield* api.call(
-          method,
-          { ...params, limit: Math.min(200, max - out.length), cursor },
-          MessagePage,
-        )
-        out.push(...res.messages)
-        cursor = res.response_metadata?.next_cursor || undefined
-        hasMore = res.has_more ?? cursor !== undefined
-      } while (cursor && out.length < max)
-      out.sort((a, b) => Number(a.ts) - Number(b.ts))
-      return { messages: out, hasMore }
-    })
+  ) {
+    const out: RawMessage[] = []
+    let cursor: string | undefined
+    let hasMore = false
+    do {
+      const res = yield* api.call(
+        method,
+        { ...params, limit: Math.min(200, max - out.length), cursor },
+        MessagePage,
+      )
+      out.push(...res.messages)
+      cursor = res.response_metadata?.next_cursor || undefined
+      hasMore = res.has_more ?? cursor !== undefined
+    } while (cursor && out.length < max)
+    out.sort((a, b) => Number(a.ts) - Number(b.ts))
+    return { messages: out, hasMore }
+  })
 
-  const target = (p: {
+  const target = Effect.fn('Slack.target')(function* (p: {
     readonly permalink?: string | undefined
     readonly channel?: string | undefined
     readonly ts?: string | undefined
-  }): Effect.Effect<
+  }): Effect.fn.Return<
     { channel: string; ts?: string | undefined; threadTs?: string | undefined },
     SlackInputInvalid
-  > =>
-    Effect.gen(function* () {
-      if (p.permalink) {
-        const parsed = parsePermalink(p.permalink)
-        if (!parsed) {
-          return yield* new SlackInputInvalid({
-            message: `Not a Slack message permalink: ${p.permalink}. Expected …/archives/<channel>/p<16 digits>.`,
-          })
-        }
-        return parsed
-      }
-      if (!p.channel) {
+  > {
+    if (p.permalink) {
+      const parsed = parsePermalink(p.permalink)
+      if (!parsed) {
         return yield* new SlackInputInvalid({
-          message: 'Pass either permalink, or channel (and ts where needed).',
+          message: `Not a Slack message permalink: ${p.permalink}. Expected …/archives/<channel>/p<16 digits>.`,
         })
       }
-      if (p.ts !== undefined && !TS.test(p.ts)) {
-        return yield* new SlackInputInvalid({
-          message: `ts must look like "1508284197.000015", got "${p.ts}".`,
-        })
-      }
-      return { channel: p.channel, ts: p.ts }
-    })
+      return parsed
+    }
+    if (!p.channel) {
+      return yield* new SlackInputInvalid({
+        message: 'Pass either permalink, or channel (and ts where needed).',
+      })
+    }
+    if (p.ts !== undefined && !TS.test(p.ts)) {
+      return yield* new SlackInputInvalid({
+        message: `ts must look like "1508284197.000015", got "${p.ts}".`,
+      })
+    }
+    return { channel: p.channel, ts: p.ts }
+  })
 
-  const readThread = (channelId: string, threadTs: string, max: number) =>
-    Effect.gen(function* () {
-      const ref = yield* channelRef(channelId)
-      const { messages, hasMore } = yield* pages(
-        'conversations.replies',
-        { channel: channelId, ts: threadTs },
-        max,
-      )
-      return {
-        channel: ref,
-        threadTs,
-        messages: yield* Effect.forEach(messages, (m) => fromRaw(m, ref)),
-        hasMore,
-      }
-    })
+  const readThread = Effect.fn('Slack.readThread')(function* (
+    channelId: string,
+    threadTs: string,
+    max: number,
+  ) {
+    const ref = yield* channelRef(channelId)
+    const { messages, hasMore } = yield* pages(
+      'conversations.replies',
+      { channel: channelId, ts: threadTs },
+      max,
+    )
+    return {
+      channel: ref,
+      threadTs,
+      messages: yield* Effect.forEach(messages, (m) => fromRaw(m, ref)),
+      hasMore,
+    }
+  })
 
-  const readChannel = (
+  const readChannel = Effect.fn('Slack.readChannel')(function* (
     channelId: string,
     range: { oldest?: string | undefined; latest?: string | undefined },
     max: number,
-  ) =>
-    Effect.gen(function* () {
-      const ref = yield* channelRef(channelId)
-      const { messages, hasMore } = yield* pages(
-        'conversations.history',
-        { channel: channelId, ...range, inclusive: true },
-        max,
-      )
-      return {
-        channel: ref,
-        messages: yield* Effect.forEach(messages, (m) => fromRaw(m, ref)),
-        hasMore,
-      }
-    })
+  ) {
+    const ref = yield* channelRef(channelId)
+    const { messages, hasMore } = yield* pages(
+      'conversations.history',
+      { channel: channelId, ...range, inclusive: true },
+      max,
+    )
+    return {
+      channel: ref,
+      messages: yield* Effect.forEach(messages, (m) => fromRaw(m, ref)),
+      hasMore,
+    }
+  })
 
-  const resolve = (ids: ReadonlyArray<string>) =>
-    Effect.gen(function* () {
-      const result = {
-        users: [] as UserInfo[],
-        channels: [] as ChannelInfo[],
-        usergroups: [] as UsergroupInfo[],
-        unresolved: [] as { id: string; error: string }[],
-      }
-      yield* Effect.forEach(
-        ids,
-        (raw) => {
-          const id = raw.replace(/^[<@#!]+|>$/g, '').replace(/^subteam\^/, '')
-          // Only answers about this one ID mark it unresolved. Auth, scope, rate-limit and transport failures would
-          // repeat for every ID, so they fail the whole call.
-          const unresolved = (e: SlackError) =>
-            e._tag === 'SlackInputInvalid' ||
-            (e._tag === 'SlackApiError' && PER_ID_ERRORS.includes(e.code))
-              ? Effect.sync(() => {
-                  result.unresolved.push({ id: raw, error: e.message })
-                })
-              : Effect.fail(e)
-          if (/^[UW]/.test(id)) {
-            return user(id).pipe(
-              Effect.tap((u) => Effect.sync(() => result.users.push(u))),
-              Effect.catch(unresolved),
-            )
-          }
-          if (/^[CGD]/.test(id)) {
-            return channel(id).pipe(
-              Effect.tap((c) => Effect.sync(() => result.channels.push(c))),
-              Effect.catch(unresolved),
-            )
-          }
-          if (id.startsWith('S')) {
-            return allUsergroups.pipe(
-              Effect.flatMap((gs) => {
-                const g = gs.find((x) => x.id === id)
-                return g
-                  ? Effect.sync(() => void result.usergroups.push(g))
-                  : unresolved(
-                      new SlackInputInvalid({
-                        message: 'no user group with this ID',
-                      }),
-                    )
-              }),
-              Effect.catch(unresolved),
-            )
-          }
-          return unresolved(
-            new SlackInputInvalid({
-              message:
-                'not a Slack ID: expected U…/W… (user), C…/G…/D… (conversation) or S… (user group)',
-            }),
+  const resolve = Effect.fn('Slack.resolve')(function* (
+    ids: ReadonlyArray<string>,
+  ) {
+    const result = {
+      users: [] as UserInfo[],
+      channels: [] as ChannelInfo[],
+      usergroups: [] as UsergroupInfo[],
+      unresolved: [] as { id: string; error: string }[],
+    }
+    yield* Effect.forEach(
+      ids,
+      (raw) => {
+        const id = raw.replace(/^[<@#!]+|>$/g, '').replace(/^subteam\^/, '')
+        // Only answers about this one ID mark it unresolved. Auth, scope, rate-limit and transport failures would
+        // repeat for every ID, so they fail the whole call.
+        const unresolved = (e: SlackError) =>
+          e._tag === 'SlackInputInvalid' ||
+          (e._tag === 'SlackApiError' && PER_ID_ERRORS.includes(e.code))
+            ? Effect.sync(() => {
+                result.unresolved.push({ id: raw, error: e.message })
+              })
+            : Effect.fail(e)
+        if (/^[UW]/.test(id)) {
+          return user(id).pipe(
+            Effect.tap((u) => Effect.sync(() => result.users.push(u))),
+            Effect.catch(unresolved),
           )
-        },
-        { concurrency: 4, discard: true },
-      )
-      return result
-    })
+        }
+        if (/^[CGD]/.test(id)) {
+          return channel(id).pipe(
+            Effect.tap((c) => Effect.sync(() => result.channels.push(c))),
+            Effect.catch(unresolved),
+          )
+        }
+        if (id.startsWith('S')) {
+          return allUsergroups.pipe(
+            Effect.flatMap((gs) => {
+              const g = gs.find((x) => x.id === id)
+              return g
+                ? Effect.sync(() => void result.usergroups.push(g))
+                : unresolved(
+                    new SlackInputInvalid({
+                      message: 'no user group with this ID',
+                    }),
+                  )
+            }),
+            Effect.catch(unresolved),
+          )
+        }
+        return unresolved(
+          new SlackInputInvalid({
+            message:
+              'not a Slack ID: expected U…/W… (user), C…/G…/D… (conversation) or S… (user group)',
+          }),
+        )
+      },
+      { concurrency: 4, discard: true },
+    )
+    return result
+  })
 
-  const myActivity = (since: string, limit: number, context: number) =>
-    Effect.gen(function* () {
-      const { id, name } = yield* me
-      const { matches } = yield* search(
-        `from:<@${id}> ${afterModifier(since)}`,
-        limit,
-        'timestamp',
-      )
-      const mine = yield* Effect.forEach(matches, fromMatch, { concurrency: 4 })
+  const myActivity = Effect.fn('Slack.myActivity')(function* (
+    since: string,
+    limit: number,
+    context: number,
+  ) {
+    const { id, name } = yield* me
+    const { matches } = yield* search(
+      `from:<@${id}> ${afterModifier(since)}`,
+      limit,
+      'timestamp',
+    )
+    const mine = yield* Effect.forEach(matches, fromMatch, { concurrency: 4 })
 
-      // One conversation per thread, and one per channel for top-level messages.
-      const groups = new Map<string, Message[]>()
-      for (const m of mine) {
-        const key = m.threadTs ? `${m.channel.id}/${m.threadTs}` : m.channel.id
-        groups.set(key, [...(groups.get(key) ?? []), m])
-      }
+    // One conversation per thread, and one per channel for top-level messages.
+    const groups = new Map<string, Message[]>()
+    for (const m of mine) {
+      const key = m.threadTs ? `${m.channel.id}/${m.threadTs}` : m.channel.id
+      groups.set(key, [...(groups.get(key) ?? []), m])
+    }
 
-      const conversations = yield* Effect.forEach(
-        [...groups.values()],
-        (group) =>
-          Effect.gen(function* () {
-            const first = group.at(-1) ?? group[0]
-            if (!first) return undefined
-            // A capped read can drop some of my own messages, so the ones search found are merged back in, and
-            // `complete` says whether anything else was left out.
-            const withMine = (read: ReadonlyArray<Message>) => {
-              const byTs = new Map(read.map((m) => [m.ts, m]))
-              for (const m of group) if (!byTs.has(m.ts)) byTs.set(m.ts, m)
-              return [...byTs.values()].sort(
-                (a, b) => Number(a.ts) - Number(b.ts),
-              )
-            }
-            if (first.threadTs) {
-              const thread = yield* readThread(
-                first.channel.id,
-                first.threadTs,
-                ACTIVITY_READ_LIMIT,
-              )
-              return {
-                channel: thread.channel,
-                threadTs: first.threadTs,
-                messages: withMine(thread.messages),
-                complete: !thread.hasMore,
-              }
-            }
-            const oldest = first.ts
-            const newest = group[0]?.ts ?? oldest
-            const before = yield* readChannel(
-              first.channel.id,
-              { latest: oldest },
-              context + 1,
+    const conversations = yield* Effect.forEach(
+      [...groups.values()],
+      (group) =>
+        Effect.gen(function* () {
+          const first = group.at(-1) ?? group[0]
+          if (!first) return undefined
+          // A capped read can drop some of my own messages, so the ones search found are merged back in, and
+          // `complete` says whether anything else was left out.
+          const withMine = (read: ReadonlyArray<Message>) => {
+            const byTs = new Map(read.map((m) => [m.ts, m]))
+            for (const m of group) if (!byTs.has(m.ts)) byTs.set(m.ts, m)
+            return [...byTs.values()].sort(
+              (a, b) => Number(a.ts) - Number(b.ts),
             )
-            const during = yield* readChannel(
+          }
+          if (first.threadTs) {
+            const thread = yield* readThread(
               first.channel.id,
-              { oldest, latest: newest },
+              first.threadTs,
               ACTIVITY_READ_LIMIT,
             )
             return {
-              channel: during.channel,
-              messages: withMine([...before.messages, ...during.messages]),
-              complete: !during.hasMore,
+              channel: thread.channel,
+              threadTs: first.threadTs,
+              messages: withMine(thread.messages),
+              complete: !thread.hasMore,
             }
-          }),
-        { concurrency: 3 },
-      )
-      return {
-        me: { id, name },
-        conversations: conversations.filter((c) => c !== undefined),
-      }
-    })
+          }
+          const oldest = first.ts
+          const newest = group[0]?.ts ?? oldest
+          const before = yield* readChannel(
+            first.channel.id,
+            { latest: oldest },
+            context + 1,
+          )
+          const during = yield* readChannel(
+            first.channel.id,
+            { oldest, latest: newest },
+            ACTIVITY_READ_LIMIT,
+          )
+          return {
+            channel: during.channel,
+            messages: withMine([...before.messages, ...during.messages]),
+            complete: !during.hasMore,
+          }
+        }),
+      { concurrency: 3 },
+    )
+    return {
+      me: { id, name },
+      conversations: conversations.filter((c) => c !== undefined),
+    }
+  })
 
-  const unansweredMentions = (input: {
-    since: string
-    minAgeHours: number
-    names: ReadonlyArray<string> | undefined
-    limit: number
-  }) =>
-    Effect.gen(function* () {
+  const unansweredMentions = Effect.fn('Slack.unansweredMentions')(
+    function* (input: {
+      since: string
+      minAgeHours: number
+      names: ReadonlyArray<string> | undefined
+      limit: number
+    }) {
       const { id: myId, name: myName } = yield* me
       const notes: string[] = []
       const after = afterModifier(input.since)
@@ -1047,24 +1044,26 @@ const make = Effect.gen(function* () {
         string,
         { messages: ReadonlyArray<RawMessage>; hasMore: boolean }
       >()
-      const scan = (channelId: string, threadTs: string | undefined) =>
-        Effect.gen(function* () {
-          const key = scanKey(channelId, threadTs)
-          const hit = scans.get(key)
-          if (hit) return hit
-          const result = yield* pages(
-            threadTs ? 'conversations.replies' : 'conversations.history',
-            {
-              channel: channelId,
-              ts: threadTs,
-              oldest: earliest.get(key) ?? threadTs,
-              inclusive: true,
-            },
-            MENTION_SCAN_LIMIT,
-          )
-          scans.set(key, result)
-          return result
-        })
+      const scan = Effect.fn('Slack.scan')(function* (
+        channelId: string,
+        threadTs: string | undefined,
+      ) {
+        const key = scanKey(channelId, threadTs)
+        const hit = scans.get(key)
+        if (hit) return hit
+        const result = yield* pages(
+          threadTs ? 'conversations.replies' : 'conversations.history',
+          {
+            channel: channelId,
+            ts: threadTs,
+            oldest: earliest.get(key) ?? threadTs,
+            inclusive: true,
+          },
+          MENTION_SCAN_LIMIT,
+        )
+        scans.set(key, result)
+        return result
+      })
 
       const classified = yield* Effect.forEach(
         candidates,
@@ -1122,7 +1121,8 @@ const make = Effect.gen(function* () {
         undetermined,
         notes,
       }
-    })
+    },
+  )
 
   const selfDm = Effect.gen(function* () {
     const { id: myId } = yield* me
@@ -1143,136 +1143,133 @@ const make = Effect.gen(function* () {
     })
   })
 
-  const draftToSelf = (input: {
+  const draftToSelf = Effect.fn('Slack.draftToSelf')(function* (input: {
     to: string
     text: string
     threadTs?: string | undefined
-  }) =>
-    Effect.gen(function* () {
-      const to = input.to.replace(/^[<@#]+|>$/g, '')
-      const isUser = /^[UW]/.test(to)
-      if (!isUser && !/^[CGD]/.test(to)) {
-        return yield* new SlackInputInvalid({
-          message: `to must be a channel ID (C…/G…/D…) or a user ID (U…/W…), got "${input.to}".`,
-        })
-      }
-      if (input.threadTs !== undefined && !TS.test(input.threadTs)) {
-        return yield* new SlackInputInvalid({
-          message: `threadTs must look like "1508284197.000015", got "${input.threadTs}".`,
-        })
-      }
-      if (isUser && input.threadTs !== undefined) {
-        return yield* new SlackInputInvalid({
-          message:
-            'A thread reply needs the conversation it lives in: pass the DM channel ID (D…) as `to`, not the user ID.',
-        })
-      }
-      const { url } = yield* me
-      const destination = isUser
-        ? `<@${to}>`
-        : input.threadTs
-          ? `<${permalinkFor(url, to, input.threadTs)}|this thread> in <#${to}>`
-          : `<#${to}>`
-      const channelId = yield* selfDm
-      const posted = yield* api.call(
-        'chat.postMessage',
-        {
-          channel: channelId,
-          text: `:memo: Draft for ${destination}\n\n${input.text}`,
-          unfurl_links: false,
-          unfurl_media: false,
-        },
-        PostMessage,
-      )
-      return { draftPermalink: permalinkFor(url, posted.channel, posted.ts) }
-    })
+  }) {
+    const to = input.to.replace(/^[<@#]+|>$/g, '')
+    const isUser = /^[UW]/.test(to)
+    if (!isUser && !/^[CGD]/.test(to)) {
+      return yield* new SlackInputInvalid({
+        message: `to must be a channel ID (C…/G…/D…) or a user ID (U…/W…), got "${input.to}".`,
+      })
+    }
+    if (input.threadTs !== undefined && !TS.test(input.threadTs)) {
+      return yield* new SlackInputInvalid({
+        message: `threadTs must look like "1508284197.000015", got "${input.threadTs}".`,
+      })
+    }
+    if (isUser && input.threadTs !== undefined) {
+      return yield* new SlackInputInvalid({
+        message:
+          'A thread reply needs the conversation it lives in: pass the DM channel ID (D…) as `to`, not the user ID.',
+      })
+    }
+    const { url } = yield* me
+    const destination = isUser
+      ? `<@${to}>`
+      : input.threadTs
+        ? `<${permalinkFor(url, to, input.threadTs)}|this thread> in <#${to}>`
+        : `<#${to}>`
+    const channelId = yield* selfDm
+    const posted = yield* api.call(
+      'chat.postMessage',
+      {
+        channel: channelId,
+        text: `:memo: Draft for ${destination}\n\n${input.text}`,
+        unfurl_links: false,
+        unfurl_media: false,
+      },
+      PostMessage,
+    )
+    return { draftPermalink: permalinkFor(url, posted.channel, posted.ts) }
+  })
 
-  const messageAt = (p: typeof ReactionTarget.Type) =>
-    Effect.gen(function* () {
-      const t = yield* target(p)
-      if (!t.ts) {
-        return yield* new SlackInputInvalid({
-          message: 'Pass a permalink, or channel together with ts.',
-        })
-      }
-      return { channel: t.channel, timestamp: t.ts }
-    })
+  const messageAt = Effect.fn('Slack.messageAt')(function* (
+    p: typeof ReactionTarget.Type,
+  ) {
+    const t = yield* target(p)
+    if (!t.ts) {
+      return yield* new SlackInputInvalid({
+        message: 'Pass a permalink, or channel together with ts.',
+      })
+    }
+    return { channel: t.channel, timestamp: t.ts }
+  })
 
-  const reactions = (p: typeof ReactionTarget.Type) =>
-    Effect.gen(function* () {
-      const at = yield* messageAt(p)
-      const { message } = yield* api.call(
-        'reactions.get',
-        { ...at, full: true },
-        ReactionsGet,
-      )
-      const { id: myId } = yield* me
-      return {
-        message: yield* fromRaw(message, yield* channelRef(at.channel)),
-        reactions: yield* Effect.forEach(message.reactions ?? [], (r) =>
-          Effect.gen(function* () {
-            return {
-              name: r.name,
-              count: r.count ?? r.users.length,
-              byMe: r.users.includes(myId),
-              users: yield* Effect.forEach(r.users, (id) =>
-                Effect.map(userName(id), (name) => ({ id, name })),
-              ),
-            }
-          }),
-        ),
-      }
-    })
-
-  const myReactions = (limit: number) =>
-    Effect.gen(function* () {
-      const out: Message[] = []
-      // Slack lists a message once per reaction of mine on it.
-      const seen = new Set<string>()
-      let cursor: string | undefined
-      do {
-        const res = yield* api.call(
-          'reactions.list',
-          { limit: Math.min(limit, 100), cursor, full: true },
-          ReactionsList,
-        )
-        for (const item of res.items) {
-          if (out.length >= limit) break
-          if (item.type !== 'message' || !item.channel || !item.message) {
-            continue
+  const reactions = Effect.fn('Slack.reactions')(function* (
+    p: typeof ReactionTarget.Type,
+  ) {
+    const at = yield* messageAt(p)
+    const { message } = yield* api.call(
+      'reactions.get',
+      { ...at, full: true },
+      ReactionsGet,
+    )
+    const { id: myId } = yield* me
+    return {
+      message: yield* fromRaw(message, yield* channelRef(at.channel)),
+      reactions: yield* Effect.forEach(message.reactions ?? [], (r) =>
+        Effect.gen(function* () {
+          return {
+            name: r.name,
+            count: r.count ?? r.users.length,
+            byMe: r.users.includes(myId),
+            users: yield* Effect.forEach(r.users, (id) =>
+              Effect.map(userName(id), (name) => ({ id, name })),
+            ),
           }
-          const key = `${item.channel}/${item.message.ts}`
-          if (seen.has(key)) continue
-          seen.add(key)
-          out.push(
-            yield* fromRaw(item.message, yield* channelRef(item.channel)),
-          )
+        }),
+      ),
+    }
+  })
+
+  const myReactions = Effect.fn('Slack.myReactions')(function* (limit: number) {
+    const out: Message[] = []
+    // Slack lists a message once per reaction of mine on it.
+    const seen = new Set<string>()
+    let cursor: string | undefined
+    do {
+      const res = yield* api.call(
+        'reactions.list',
+        { limit: Math.min(limit, 100), cursor, full: true },
+        ReactionsList,
+      )
+      for (const item of res.items) {
+        if (out.length >= limit) break
+        if (item.type !== 'message' || !item.channel || !item.message) {
+          continue
         }
-        cursor = res.response_metadata?.next_cursor || undefined
-      } while (cursor && out.length < limit)
-      return { messages: out }
-    })
+        const key = `${item.channel}/${item.message.ts}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push(yield* fromRaw(item.message, yield* channelRef(item.channel)))
+      }
+      cursor = res.response_metadata?.next_cursor || undefined
+    } while (cursor && out.length < limit)
+    return { messages: out }
+  })
 
   // Adding a reaction you already left, or removing one you never left, is the end state the caller asked for.
-  const react = (
+  const react = Effect.fn('Slack.react')(function* (
     method: 'reactions.add' | 'reactions.remove',
     p: typeof ReactionEdit.Type,
-  ) =>
-    Effect.gen(function* () {
-      const at = yield* messageAt(p)
-      const name = p.name.replace(/^:|:$/g, '')
-      const changed = yield* api
-        .call(method, { ...at, name }, Schema.Struct({}))
-        .pipe(
-          Effect.as(true),
-          Effect.catchTag('SlackApiError', (e) =>
-            e.code === 'already_reacted' || e.code === 'no_reaction'
-              ? Effect.succeed(false)
-              : Effect.fail(e),
-          ),
-        )
-      return { name, changed }
-    })
+  ) {
+    const at = yield* messageAt(p)
+    const name = p.name.replace(/^:|:$/g, '')
+    const changed = yield* api
+      .call(method, { ...at, name }, Schema.Struct({}))
+      .pipe(
+        Effect.as(true),
+        Effect.catchTag('SlackApiError', (e) =>
+          e.code === 'already_reacted' || e.code === 'no_reaction'
+            ? Effect.succeed(false)
+            : Effect.fail(e),
+        ),
+      )
+    return { name, changed }
+  })
 
   return {
     search,
