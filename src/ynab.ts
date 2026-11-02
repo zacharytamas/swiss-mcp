@@ -1,4 +1,4 @@
-import { Config, Effect, Option, Redacted, Schema } from 'effect'
+import { Clock, Config, Effect, Option, Redacted, Schema } from 'effect'
 import { Tool, Toolkit } from 'effect/ai'
 import * as ynab from 'ynab'
 import {
@@ -76,7 +76,11 @@ export const YnabToolkitLive = YnabToolkit.toLayer(
             }),
           ),
       })
-      const today = Temporal.Now.plainDateISO()
+      const today = Temporal.Instant.fromEpochMilliseconds(
+        yield* Clock.currentTimeMillis,
+      )
+        .toZonedDateTimeISO(Temporal.Now.timeZoneId())
+        .toPlainDate()
       const target = paceTarget(today, day)
       const days = today.until(target).days
       const milliunits = data.month.to_be_budgeted
