@@ -5,6 +5,7 @@ import {
 } from '@nkootstra/block-kit/mrkdwn'
 
 import {
+  Clock,
   Config,
   Context,
   Effect,
@@ -1002,7 +1003,7 @@ const make = Effect.gen(function* () {
         string,
         { via: Set<string>; match: RawSearchMatch }
       >()
-      const now = Date.now() / 1000
+      const now = (yield* Clock.currentTimeMillis) / 1000
       const oldEnough = (m: RawSearchMatch) =>
         m.user !== myId && now - Number(m.ts) >= input.minAgeHours * 3600
       for (const { via, query } of queries) {
