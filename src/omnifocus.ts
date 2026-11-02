@@ -201,7 +201,7 @@ const omnifocusTool = <
 const dates =
   "Dates are this Mac's local time; a date without a time gets OmniFocus's default start time (deferDate) or default due time (dueDate)."
 const repeats =
-  'repeat.rule is an RFC 5545 RRULE body, e.g. FREQ=DAILY (every day), FREQ=DAILY;INTERVAL=3 (every 3 days), FREQ=WEEKLY (every week), FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR (weekdays), FREQ=WEEKLY;BYDAY=SA,SU (weekends), FREQ=MONTHLY (every month). A rule OmniFocus cannot read is OmniFocusRepeatInvalid.'
+  'repeat.rule is an RFC 5545 RRULE body, e.g. FREQ=DAILY (every day), FREQ=DAILY;INTERVAL=3 (every 3 days), FREQ=WEEKLY (every week), FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR (weekdays), FREQ=WEEKLY;BYDAY=SA,SU (weekends), FREQ=MONTHLY (every month).'
 const stored = 'Returns the task as OmniFocus stored it.'
 
 export const OmniFocusToolkit = Toolkit.make(
