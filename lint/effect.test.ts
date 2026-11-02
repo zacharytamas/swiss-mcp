@@ -14,6 +14,10 @@ export const value = Effect.gen(function* () { return 1 })
 export const callback = Effect.forEach([1], (n) => Effect.gen(function* () { return n }))
 export const other = (n: number) => Effect.succeed(n)
 export const block = (n: number) => { return Effect.gen(function* () { return n }) }
+export const runPromise = () => Effect.runPromise(Effect.gen(function* () { return 1 }))
+export const runSync = () => Effect.runSync(Effect.gen(function* () { return 1 }))
+export const pipedPromise = () => Effect.gen(function* () { return 1 }).pipe(Effect.runPromise)
+export const pipedSync = () => Effect.gen(function* () { return 1 }).pipe(Effect.orDie, Effect.runSync)
 `
 
 const flagged = () => {
