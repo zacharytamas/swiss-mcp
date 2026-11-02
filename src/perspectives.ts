@@ -1,4 +1,4 @@
-import { Result, Schema } from 'effect'
+import { Predicate, Result, Schema } from 'effect'
 import {
   RawRule,
   RawRules,
@@ -50,7 +50,7 @@ const ruleKeys = new Set([
 ])
 
 const unsupported = (raw: unknown): string => {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+  if (!Predicate.isObject(raw)) {
     return `rule ${JSON.stringify(raw)} is not supported`
   }
   const entries = Object.entries(raw)
