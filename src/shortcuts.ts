@@ -61,23 +61,22 @@ const make = Effect.gen(function* () {
     Config.withDefault('/usr/bin/shortcuts'),
   )
 
-  const exec = (args: ReadonlyArray<string>) =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const handle = yield* spawner.spawn(
-          ChildProcess.make(bin, args, { stdin: 'ignore' }),
-        )
-        const [stdout, stderr, code] = yield* Effect.all(
-          [
-            Stream.mkString(Stream.decodeText(handle.stdout)),
-            Stream.mkString(Stream.decodeText(handle.stderr)),
-            handle.exitCode,
-          ],
-          { concurrency: 'unbounded' },
-        )
-        return { stdout, stderr, code: Number(code) }
-      }),
+  const exec = Effect.fn('Shortcuts.exec')(function* (
+    args: ReadonlyArray<string>,
+  ) {
+    const handle = yield* spawner.spawn(
+      ChildProcess.make(bin, args, { stdin: 'ignore' }),
     )
+    const [stdout, stderr, code] = yield* Effect.all(
+      [
+        Stream.mkString(Stream.decodeText(handle.stdout)),
+        Stream.mkString(Stream.decodeText(handle.stderr)),
+        handle.exitCode,
+      ],
+      { concurrency: 'unbounded' },
+    )
+    return { stdout, stderr, code: Number(code) }
+  }, Effect.scoped)
 
   const resolve = Effect.fn('Shortcuts.resolve')(function* (
     shortcut: string,
