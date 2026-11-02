@@ -256,7 +256,7 @@ export const OmniFocusToolkit = Toolkit.make(
   ),
   omnifocusTool(
     'omnifocus_create_task',
-    `Add a task to the end of an OmniFocus project, or to the Inbox when no project is given, as Quick Entry does. ${dates} Tags and projects must already exist; omnifocus_create_tag and omnifocus_create_project make them. A completed or dropped project is OmniFocusProjectClosed, since adding to it would reopen it or drop the task. ${repeats} ${stored}`,
+    `Add a task to the end of an OmniFocus project, or to the Inbox when no project is given, as Quick Entry does. ${dates} Tags and projects must already exist; omnifocus_create_tag and omnifocus_create_project make them. A completed or dropped project is refused, since adding to it would reopen it or drop the task. ${repeats} ${stored}`,
     CreateTaskParams,
     TaskResult,
     'adds',
