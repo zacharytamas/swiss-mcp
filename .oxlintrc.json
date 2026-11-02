@@ -1,9 +1,10 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "jsPlugins": ["./lint/location-plugin.js"],
+  "jsPlugins": ["./lint/location-plugin.js", "./lint/effect-plugin.js"],
   "rules": {
     "location/schema-location": "error",
-    "location/error-location": "error"
+    "location/error-location": "error",
+    "effect/no-gen-wrapper": "error"
   },
   "options": {
     "typeAware": true

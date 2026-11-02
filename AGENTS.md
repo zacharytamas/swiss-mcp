@@ -4,6 +4,8 @@
 
 The `effect` package ships best-practice guidance for agents at `node_modules/effect/AGENTS.md`. Read it before you write or change Effect code. A new worktree has no `node_modules`, so run `bun install` first. Its examples put Schemas and errors next to the code that uses them. The location rules below still apply here.
 
+The `effect/no-gen-wrapper` rule in `lint/effect-plugin.js` enforces the guide's "use `Effect.fn` instead of a function that returns `Effect.gen`" advice. `lint/effect.test.ts` covers it.
+
 ## Named Schemas live in `*-schema.ts`
 
 A named Schema goes in a sibling file named after the module that primarily uses it. A named Schema is a variable or function whose value is a `Schema.*` expression, or a factory that returns one. For example, `src/due.ts` imports its Schemas from `src/due-schema.ts`.
