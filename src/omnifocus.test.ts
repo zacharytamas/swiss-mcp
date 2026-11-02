@@ -16,7 +16,12 @@ import {
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { requestOnce } from '../scripts/mcp-client.ts'
 import { OmniFocusTimedOut } from './omnifocus-errors.ts'
-import { JXA, OmniFocus } from './omnifocus.ts'
+import {
+  JXA,
+  OmniFocus,
+  OmniFocusToolkit,
+  OmniFocusToolkitLive,
+} from './omnifocus.ts'
 
 const bytes = (value: string) => Stream.succeed(new TextEncoder().encode(value))
 
@@ -155,6 +160,50 @@ describe('OmniFocus.evaluate', () => {
   })
 })
 
+describe('completion followup failure boundary', () => {
+  test.each(['defect', 'interruption'])(
+    'does not turn a read %s into successful completion output',
+    async (kind) => {
+      const operations: Array<string> = []
+      const receipt = { results: [] }
+      const native = Layer.succeed(OmniFocus)({
+        evaluate: (operation, _source, output) => {
+          operations.push(operation)
+          if (operations.length === 1) {
+            return Schema.decodeUnknownEffect(output)(receipt).pipe(
+              Effect.orDie,
+            )
+          }
+          return kind === 'defect'
+            ? Effect.die('read defect')
+            : Effect.interrupt
+        },
+      })
+      const exit = await Effect.runPromiseExit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const toolkit = yield* OmniFocusToolkit
+            const stream = yield* toolkit.handle('omnifocus_complete_tasks', {
+              tasks: [{ id: 't1' }],
+              returnList: { type: 'tag', selector: 'Home' },
+            })
+            return yield* Stream.runCollect(stream)
+          }),
+        ).pipe(Effect.provide(OmniFocusToolkitLive), Effect.provide(native)),
+      )
+      expect(operations).toEqual(['complete tasks', 'find tasks'])
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(
+          kind === 'defect'
+            ? Cause.hasDies(exit.cause)
+            : Cause.hasInterrupts(exit.cause),
+        ).toBe(true)
+      }
+    },
+  )
+})
+
 let dir = ''
 
 // A stand-in for /usr/bin/osascript: records its flags, the JXA and the OmniJS source it was given, then answers with
@@ -167,6 +216,16 @@ beforeAll(async () => {
 printf '%s ' "$1" "$2" "$3" > "${dir}/flags"
 printf '%s' "$4" > "${dir}/jxa"
 printf '%s' "$5" > "${dir}/source.js"
+count=$(cat "${dir}/count")
+count=$((count + 1))
+printf '%s' "$count" > "${dir}/count"
+cp "${dir}/source.js" "${dir}/source-$count.js"
+if [ -f "${dir}/answer-$count" ]; then
+  sleep "$(cat "${dir}/delay-$count")"
+  cat "${dir}/stderr-$count" >&2
+  cat "${dir}/answer-$count"
+  exit "$(cat "${dir}/exit-$count")"
+fi
 cat "${dir}/stderr" >&2
 cat "${dir}/reply"
 exit "$(cat "${dir}/exit")"
@@ -176,11 +235,30 @@ exit "$(cat "${dir}/exit")"
 })
 afterAll(() => rm(dir, { recursive: true, force: true }))
 
+type Answer = { reply?: string; stderr?: string; exit?: number; delay?: number }
+
 const request = async (
   method: string,
   params: object,
-  { reply = '{}', stderr = '', exit = 0 } = {},
+  {
+    reply = '{}',
+    stderr = '',
+    exit = 0,
+    answers = [],
+  }: Answer & { answers?: ReadonlyArray<Answer> } = {},
 ) => {
+  await Bun.write(join(dir, 'count'), '0')
+  for (const entry of new Bun.Glob(
+    '{answer,delay,stderr,exit,source}-*',
+  ).scanSync(dir)) {
+    await rm(join(dir, entry))
+  }
+  for (const [i, answer] of answers.entries()) {
+    await Bun.write(join(dir, `answer-${i + 1}`), answer.reply ?? '{}')
+    await Bun.write(join(dir, `stderr-${i + 1}`), answer.stderr ?? '')
+    await Bun.write(join(dir, `exit-${i + 1}`), String(answer.exit ?? 0))
+    await Bun.write(join(dir, `delay-${i + 1}`), String(answer.delay ?? 0))
+  }
   await Bun.write(join(dir, 'reply'), reply)
   await Bun.write(join(dir, 'stderr'), stderr)
   await Bun.write(join(dir, 'exit'), String(exit))
@@ -194,13 +272,23 @@ const request = async (
 const callTool = (
   name: string,
   args: object,
-  answer: { reply?: string; stderr?: string; exit?: number } = {},
+  answer: Answer & { answers?: ReadonlyArray<Answer> } = {},
 ) => request('tools/call', { name, arguments: args }, answer)
 
 // The OmniJS program OmniFocus would have run, and the arguments it carries on its second-to-last line.
 const sent = async () => {
   const source = await Bun.file(join(dir, 'source.js')).text()
   return { source, args: JSON.parse(source.split('\n').at(-2) ?? '') }
+}
+
+const invocations = async () => {
+  const count = Number(await Bun.file(join(dir, 'count')).text())
+  return Promise.all(
+    Array.from({ length: count }, async (_, i) => {
+      const source = await Bun.file(join(dir, `source-${i + 1}.js`)).text()
+      return { source, args: JSON.parse(source.split('\n').at(-2) ?? '') }
+    }),
+  )
 }
 
 const failure = (reply: Awaited<ReturnType<typeof callTool>>) => {
@@ -510,6 +598,312 @@ describe('OmniFocus tools over MCP', () => {
       ],
     })
   })
+
+  test.each([undefined, null])(
+    'returnList %s preserves the exact completion receipt with one invocation',
+    async (returnList) => {
+      const receipt = {
+        results: [{ id: 't1', completed: MORNING_TASK, next: null }],
+      }
+      const reply = await callTool(
+        'omnifocus_complete_tasks',
+        {
+          tasks: [{ id: 't1' }],
+          ...(returnList === undefined ? {} : { returnList }),
+        },
+        { reply: JSON.stringify(receipt) },
+      )
+      expect(reply.result.isError).toBe(false)
+      expect(reply.result.structuredContent).toEqual(receipt)
+      expect((await invocations()).map((i) => i.args)).toEqual([
+        { tasks: [{ id: 't1' }] },
+      ])
+    },
+  )
+
+  test.each(['perspective', 'project', 'tag'])(
+    'returnList %s completes before a fresh read and echoes its source',
+    async (type) => {
+      const source = {
+        type,
+        selector: type === 'perspective' ? 'Home' : strange,
+      }
+      const receipt = {
+        results: [{ id: 't1', completed: MORNING_TASK, next: null }],
+      }
+      const reply = await callTool(
+        'omnifocus_complete_tasks',
+        {
+          tasks: [{ id: 't1' }],
+          returnList: source,
+        },
+        {
+          answers: [
+            { reply: JSON.stringify(receipt) },
+            {
+              reply:
+                type === 'perspective'
+                  ? SNAPSHOT
+                  : JSON.stringify({ tasks: HOME_TASKS, omitted: 3 }),
+            },
+          ],
+        },
+      )
+      expect(reply.result.isError).toBe(false)
+      expect(reply.result.structuredContent).toEqual({
+        ...receipt,
+        list: {
+          kind: 'success',
+          source,
+          tasks: HOME_TASKS,
+          omitted: type === 'perspective' ? 0 : 3,
+        },
+      })
+      const calls = await invocations()
+      expect(calls).toHaveLength(2)
+      expect(calls[0]?.args).toEqual({ tasks: [{ id: 't1' }] })
+      expect(calls[0]?.source).toContain('markComplete')
+      expect(calls[1]?.args).toEqual(
+        type === 'perspective' ? {} : { [type]: strange, limit: 100 },
+      )
+      expect(calls[1]?.source).not.toContain('markComplete')
+    },
+  )
+
+  test.each([0, 100, 101])(
+    'a returned perspective caps %i tasks while standalone remains uncapped',
+    async (count) => {
+      const expected = Array.from({ length: count }, (_, i) =>
+        task(`fresh-${i}`, 'Fresh task', 'Available', ['Home']),
+      )
+      const tasks = expected.map((t) => ({
+        ...t,
+        tagIds: ['home'],
+        leaf: true,
+        effectiveDeferDate: null,
+      }))
+      const snapshot = JSON.stringify({
+        tags: TAG_TREE,
+        tasks,
+        perspectives: PERSPECTIVES,
+      })
+      const source = { type: 'perspective', selector: 'Home' }
+      const receipt = {
+        results: [{ id: 't1', completed: MORNING_TASK, next: null }],
+      }
+      const reply = await callTool(
+        'omnifocus_complete_tasks',
+        { tasks: [{ id: 't1' }], returnList: source },
+        {
+          answers: [{ reply: JSON.stringify(receipt) }, { reply: snapshot }],
+        },
+      )
+      expect(reply.result.isError).toBe(false)
+      expect(reply.result.structuredContent).toEqual({
+        ...receipt,
+        list: {
+          kind: 'success',
+          source,
+          tasks: expected.slice(0, 100),
+          omitted: Math.max(0, count - 100),
+        },
+      })
+      expect(await invocations()).toHaveLength(2)
+      const standalone = await callTool(
+        'omnifocus_perspective_tasks',
+        { perspective: 'Home' },
+        { reply: snapshot },
+      )
+      expect(standalone.result.structuredContent).toEqual({
+        perspective: 'Home',
+        tasks: expected,
+      })
+      expect(await invocations()).toHaveLength(1)
+    },
+  )
+
+  test.each(['project', 'tag'])(
+    'an empty returned %s list is a success',
+    async (type) => {
+      const source = { type, selector: 'exists but empty' }
+      const receipt = {
+        results: [{ id: 't1', completed: MORNING_TASK, next: null }],
+      }
+      const reply = await callTool(
+        'omnifocus_complete_tasks',
+        { tasks: [{ id: 't1' }], returnList: source },
+        {
+          answers: [
+            { reply: JSON.stringify(receipt) },
+            { reply: JSON.stringify({ tasks: [], omitted: 0 }) },
+          ],
+        },
+      )
+      expect(reply.result.isError).toBe(false)
+      expect(reply.result.structuredContent).toEqual({
+        ...receipt,
+        list: { kind: 'success', source, tasks: [], omitted: 0 },
+      })
+      expect(await invocations()).toHaveLength(2)
+    },
+  )
+
+  test.each([
+    ['Nope', 'OmniFocusPerspectiveNotFound'],
+    ['Twice', 'OmniFocusPerspectiveAmbiguous'],
+    ['Completed', 'OmniFocusPerspectiveUnsupported'],
+  ])(
+    'the post-completion perspective %s failure preserves the successful receipt',
+    async (selector, error) => {
+      const source = { type: 'perspective', selector }
+      const receipt = {
+        results: [{ id: 't1', completed: MORNING_TASK, next: null }],
+      }
+      const reply = await callTool(
+        'omnifocus_complete_tasks',
+        { tasks: [{ id: 't1' }], returnList: source },
+        {
+          answers: [{ reply: JSON.stringify(receipt) }, { reply: SNAPSHOT }],
+        },
+      )
+      expect(reply.result.isError).toBe(false)
+      expect(reply.result.structuredContent).toMatchObject({
+        ...receipt,
+        list: { kind: 'failure', source, error, message: expect.any(String) },
+      })
+      expect(await invocations()).toHaveLength(2)
+    },
+  )
+
+  test.each([
+    {
+      reply: JSON.stringify({
+        _tag: 'OmniFocusProjectNotFound',
+        message: 'missing project',
+      }),
+      type: 'project',
+      error: 'OmniFocusProjectNotFound',
+    },
+    {
+      reply: JSON.stringify({
+        _tag: 'OmniFocusTagNotFound',
+        message: 'missing tag',
+      }),
+      type: 'tag',
+      error: 'OmniFocusTagNotFound',
+    },
+    { reply: 'not json', type: 'project', error: 'OmniFocusOutputInvalid' },
+    { reply: '{}', type: 'tag', error: 'OmniFocusOutputInvalid' },
+    {
+      stderr: 'read failed',
+      exit: 1,
+      type: 'project',
+      error: 'OmniFocusFailed',
+    },
+  ])(
+    'a failed returned list is nested: $error ($type)',
+    async ({ type, error, ...answer }) => {
+      const source = { type, selector: 'missing' }
+      const receipt = {
+        results: [{ id: 't1', completed: MORNING_TASK, next: null }],
+      }
+      const reply = await callTool(
+        'omnifocus_complete_tasks',
+        { tasks: [{ id: 't1' }], returnList: source },
+        {
+          answers: [{ reply: JSON.stringify(receipt) }, answer],
+        },
+      )
+      expect(reply.result.isError).toBe(false)
+      expect(reply.result.structuredContent).toMatchObject({
+        ...receipt,
+        list: { kind: 'failure', source, error, message: expect.any(String) },
+      })
+      expect(await invocations()).toHaveLength(2)
+    },
+  )
+
+  test('a returned-list timeout preserves the receipt without retrying completion', async () => {
+    const source = { type: 'tag', selector: 'slow' }
+    const receipt = {
+      results: [{ id: 't1', completed: MORNING_TASK, next: null }],
+    }
+    const reply = await callTool(
+      'omnifocus_complete_tasks',
+      { tasks: [{ id: 't1' }], returnList: source },
+      {
+        answers: [{ reply: JSON.stringify(receipt) }, { delay: 35 }],
+      },
+    )
+    expect(reply.result.isError).toBe(false)
+    expect(reply.result.structuredContent).toMatchObject({
+      ...receipt,
+      list: {
+        kind: 'failure',
+        source,
+        error: 'OmniFocusTimedOut',
+        message: expect.stringContaining('30000 ms'),
+      },
+    })
+    expect(await invocations()).toHaveLength(2)
+  }, 40000)
+
+  test.each([
+    {
+      reply: JSON.stringify({
+        _tag: 'OmniFocusTaskNotFound',
+        message: 'missing task',
+      }),
+      error: 'OmniFocusTaskNotFound',
+    },
+    { reply: 'not json', error: 'OmniFocusOutputInvalid' },
+    { reply: '{}', error: 'OmniFocusOutputInvalid' },
+    { stderr: 'completion failed', exit: 1, error: 'OmniFocusFailed' },
+  ])(
+    'a completion failure $error does not read the requested list',
+    async ({ error, ...answer }) => {
+      const reply = await callTool(
+        'omnifocus_complete_tasks',
+        {
+          tasks: [{ id: 't1' }],
+          returnList: { type: 'tag', selector: 'Home' },
+        },
+        answer,
+      )
+      expect(failure(reply).error).toBe(error)
+      expect(await invocations()).toHaveLength(1)
+    },
+  )
+
+  test('a completion timeout stays top-level and does not read the requested list', async () => {
+    const reply = await callTool(
+      'omnifocus_complete_tasks',
+      { tasks: [{ id: 't1' }], returnList: { type: 'tag', selector: 'Home' } },
+      { answers: [{ delay: 35 }] },
+    )
+    expect(failure(reply).error).toBe('OmniFocusTimedOut')
+    expect(await invocations()).toHaveLength(1)
+  }, 40000)
+
+  test.each([
+    {},
+    { type: 'tag' },
+    { selector: 'Home' },
+    { type: 'unknown', selector: 'Home' },
+    { type: 'project', selector: '' },
+    { type: 'tag', selector: null },
+    { type: 'perspective', selector: 123 },
+  ])(
+    'rejects invalid returnList %j before any mutation',
+    async (returnList) => {
+      const reply = await callTool('omnifocus_complete_tasks', {
+        tasks: [{ id: 't1' }],
+        returnList,
+      })
+      expect(reply.error ?? reply.result.isError).toBeTruthy()
+      expect(await invocations()).toHaveLength(0)
+    },
+  )
 
   test('a complete with no tasks is rejected before OmniFocus is called', async () => {
     const reply = await callTool('omnifocus_complete_tasks', { tasks: [] })

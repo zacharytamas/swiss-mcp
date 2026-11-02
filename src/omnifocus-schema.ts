@@ -350,7 +350,38 @@ export const FoundTasks = Schema.Struct({
   }),
 })
 
+const ReturnListSource = Schema.Struct({
+  type: Schema.Literals(['perspective', 'project', 'tag']),
+  selector: NonEmpty.annotate({
+    description:
+      'An exact custom perspective name, or a project or tag id, full path or name using omnifocus_find_tasks matching.',
+  }),
+})
+export type ReturnListSource = typeof ReturnListSource.Type
+
+const ReturnedList = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal('success'),
+    source: ReturnListSource,
+    ...FoundTasks.fields,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal('failure'),
+    source: ReturnListSource,
+    error: Schema.String,
+    message: Schema.String,
+  }),
+])
+
+export type ReturnedList = typeof ReturnedList.Type
+
+export const CompleteTasksResponse = Schema.Struct({
+  ...CompleteResults.fields,
+  list: Schema.optionalKey(ReturnedList),
+})
+
 export const CompleteTasksParams = Schema.Struct({
+  returnList: Omittable(ReturnListSource),
   tasks: Schema.Array(
     Schema.Struct({
       id: TaskId,

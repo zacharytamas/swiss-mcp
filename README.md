@@ -72,6 +72,28 @@ A perspective's tasks are worked out in `src/perspectives.ts`. One call reads ev
 
 What a task means is left to OmniFocus. `status` is OmniFocus's own task status. A date without a time gets the default start or due time from OmniFocus's settings. A repeat is an OmniFocus repetition rule, and any field you leave out gets OmniFocus's default. Completing a repeating task twice moves it on twice, so `omnifocus_complete_tasks` takes the `deferDate` you saw for a repeating task and changes nothing if the task has moved on since. It checks every task before completing any, so a refused call changes nothing. No tool creates folders or perspectives, and none deletes anything. `omnifocus_create_task` never creates the tags or project it is given; a name that doesn't exist is an error, so a typo can't make a stray tag.
 
+### Return a list after completing tasks
+
+`omnifocus_complete_tasks` accepts an optional `returnList`:
+
+```json
+{
+  "tasks": [{ "id": "task-id" }],
+  "returnList": { "type": "project", "selector": "Domestic/Housekeeping" }
+}
+```
+
+`type` is `perspective`, `project` or `tag`; `selector` is a nonempty string. A perspective uses its exact custom name. Projects and tags use `omnifocus_find_tasks` matching: an ID takes precedence; otherwise every project or tag with that path or name matches. Tags also match nested tags. These lists contain only remaining tasks, in database order, with the existing project-as-task behavior.
+
+Omitting `returnList`, or passing `null`, returns only the existing `results` and makes no extra read. When requested, `list` is one of:
+
+- `{ "kind": "success", "source": { "type": "project", "selector": "Domestic/Housekeeping" }, "tasks": [], "omitted": 0 }`
+- `{ "kind": "failure", "source": { "type": "project", "selector": "Domestic/Housekeeping" }, "error": "OmniFocusProjectNotFound", "message": "..." }`
+
+`source` echoes the decoded selector object. All returned lists stop at 100 tasks, and `omitted` counts the rest. The standalone `omnifocus_perspective_tasks` tool remains uncapped.
+
+The server completes the tasks, then reads the list in a separate evaluation. Another change can happen between them. Each evaluation has its own 30-second timeout. Invalid input is rejected before completion. Selector lookup happens afterward. A failed read preserves the successful completion receipt and MCP `isError: false`. Retry only the read with `omnifocus_find_tasks` or `omnifocus_perspective_tasks`, since repeating completion could advance another occurrence. A completion error stays a top-level tool error and triggers no list read.
+
 ### Setup
 
 - OmniFocus 4.7 or later, with Pro: Omni Automation needs Pro.
