@@ -629,6 +629,24 @@ describe('findTasks', () => {
     expect(find({ tag: 'Nope' })._tag).toBe('OmniFocusTagNotFound')
   })
 
+  test.each([0, 100, 101])(
+    'project and tag searches cap %i matching tasks at 100',
+    (count) => {
+      for (let i = 0; i < count; i++) {
+        existing({
+          name: `Task ${i}`,
+          containingProject: housekeeping,
+          tags: [morning],
+        })
+      }
+      for (const selector of [{ project: 'housekeeping' }, { tag: 'slot' }]) {
+        const found = find(selector)
+        expect(found.tasks).toHaveLength(Math.min(count, 100))
+        expect(found.omitted).toBe(Math.max(0, count - 100))
+      }
+    },
+  )
+
   test('lists at most the limit and counts the rest', () => {
     for (const name of ['a', 'b', 'c']) existing({ name })
 

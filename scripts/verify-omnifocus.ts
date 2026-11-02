@@ -2,10 +2,13 @@
 // Default: read-only (list perspectives, tags and projects, each supported perspective's tasks, and find tasks).
 // --write: create a throwaway project and a throwaway tag with a child, each twice to check a retry makes no second
 // one. In the project, create, update, complete and skip a throwaway repeating task, move it to the Inbox and back,
-// check a task and one inside it are refused together, complete it with a second task in one call, and check a
+// check returned project/tag/perspective lists, a failed list after completion, and newly available sequential tasks.
+// Check a task and one inside it are refused together, complete it with a second task in one call, and check a
 // dropped throwaway project takes no task. Then delete every task, project and tag with the throwaway names.
 // A failed write step stops the ones after it, so nothing acts on a task the server returned wrongly.
 // --parity: compare each supported perspective's tasks with what OmniFocus renders for it in a temporary tab.
+import { Schema } from 'effect'
+
 type Item = Record<string, any>
 
 const write = Bun.argv.includes('--write')
@@ -226,6 +229,7 @@ if (write) {
       {
         name,
         project,
+        tags: [`${tagName}/child`],
         deferDate: today,
         repeat: {
           rule: 'FREQ=DAILY',
@@ -294,15 +298,27 @@ if (write) {
 
     const completed = await step(
       'omnifocus_complete_tasks',
-      { tasks: [{ id, deferDate: seen }] },
-      ({ results: [result] }) =>
+      {
+        tasks: [{ id, deferDate: seen }],
+        returnList: { type: 'project', selector: projectId },
+      },
+      ({ results: [result], list }) =>
         result?.completed?.status !== 'Completed'
           ? `completed is ${JSON.stringify(result?.completed)}`
           : result.completed.id === id
             ? 'completed the repeating task itself, not an occurrence'
             : result.next?.id !== id || !later(result.next.deferDate, seen)
               ? `next is ${JSON.stringify(result.next)}`
-              : undefined,
+              : list?.kind !== 'success' ||
+                  list.source?.type !== 'project' ||
+                  list.source.selector !== projectId ||
+                  !list.tasks?.some(
+                    (t: Item) =>
+                      t.id === id && t.deferDate === result.next.deferDate,
+                  ) ||
+                  list.tasks.some((t: Item) => t.id === result.completed.id)
+                ? `returned project list is ${JSON.stringify(list)}`
+                : undefined,
     )
     const nextSeen = completed.results[0].next.deferDate
 
@@ -325,11 +341,25 @@ if (write) {
 
     await step(
       'omnifocus_complete_tasks',
-      { tasks: [{ id, deferDate: nextSeen, skip: true }] },
-      ({ results: [result] }) =>
+      {
+        tasks: [{ id, deferDate: nextSeen, skip: true }],
+        returnList: { type: 'tag', selector: tagName },
+      },
+      ({ results: [result], list }) =>
         result?.next?.id !== id || !later(result.next.deferDate, nextSeen)
           ? `next is ${JSON.stringify(result?.next)}`
-          : undefined,
+          : list?.kind !== 'success' ||
+              list.source?.type !== 'tag' ||
+              list.source.selector !== tagName ||
+              !list.tasks?.some(
+                (t: Item) =>
+                  t.id === id && t.deferDate === result.next.deferDate,
+              ) ||
+              list.tasks.some((t: Item) =>
+                ['Completed', 'Dropped'].includes(t.status),
+              )
+            ? `returned tag list is ${JSON.stringify(list)}`
+            : undefined,
     )
 
     await step(
@@ -395,6 +425,103 @@ if (write) {
         results.some((r: Item) => r.completed?.status !== 'Completed')
           ? `results are ${JSON.stringify(results)}, not both tasks completed in order`
           : undefined,
+    )
+
+    await step(
+      'omnifocus_complete_tasks',
+      {
+        tasks: [{ id: plain.task.id }],
+        returnList: { type: 'tag', selector: tagName },
+      },
+      ({ results, list }) =>
+        results?.[0]?.completed?.status === 'Completed' &&
+        list?.kind === 'success' &&
+        list.tasks?.length === 0 &&
+        list.omitted === 0
+          ? undefined
+          : `repeat completion or empty tag list is wrong: ${JSON.stringify({ results, list })}`,
+    )
+
+    if (supported[0]) {
+      const selector = supported[0].name
+      await step(
+        'omnifocus_complete_tasks',
+        {
+          tasks: [{ id: plain.task.id }],
+          returnList: { type: 'perspective', selector },
+        },
+        ({ results, list }) =>
+          results?.[0]?.completed?.status === 'Completed' &&
+          list?.kind === 'success' &&
+          list.source?.type === 'perspective' &&
+          list.source.selector === selector &&
+          Array.isArray(list.tasks) &&
+          list.tasks.length <= 100 &&
+          list.omitted >= 0 &&
+          !list.tasks.some((t: Item) =>
+            ['Completed', 'Dropped'].includes(t.status),
+          )
+            ? undefined
+            : `returned perspective is wrong: ${JSON.stringify(list)}`,
+      )
+    } else {
+      console.log(
+        'SKIP returned perspective: no existing supported custom perspective',
+      )
+    }
+
+    const [firstId, secondId] = Schema.decodeUnknownSync(
+      Schema.Tuple([Schema.String, Schema.String]),
+    )(
+      await omnijs(
+        `((projectId, name) => {
+  const p = flattenedProjects.find((p) => p.id.primaryKey === projectId)
+  p.sequential = true
+  const first = new Task(name, p.ending)
+  const second = new Task(name, p.ending)
+  return JSON.stringify([first.id.primaryKey, second.id.primaryKey])
+})(${JSON.stringify(projectId)}, ${JSON.stringify(name)})`,
+      ),
+    )
+    await step('omnifocus_find_tasks', { project: projectId }, ({ tasks }) =>
+      tasks?.some((t: Item) => t.id === secondId && t.status === 'Blocked')
+        ? undefined
+        : 'second sequential task was not initially blocked',
+    )
+    await step(
+      'omnifocus_complete_tasks',
+      {
+        tasks: [{ id: firstId }],
+        returnList: { type: 'project', selector: projectId },
+      },
+      ({ results, list }) =>
+        results?.[0]?.completed?.status === 'Completed' &&
+        list?.kind === 'success' &&
+        !list.tasks?.some((t: Item) => t.id === firstId) &&
+        list.tasks?.some(
+          (t: Item) =>
+            t.id === secondId && ['Available', 'Next'].includes(t.status),
+        )
+          ? undefined
+          : `fresh project list did not show the newly available task: ${JSON.stringify(list)}`,
+    )
+    const missing = `${name} missing perspective`
+    await step(
+      'omnifocus_complete_tasks',
+      {
+        tasks: [{ id: secondId }],
+        returnList: { type: 'perspective', selector: missing },
+      },
+      ({ results, list }) =>
+        results?.[0]?.completed?.id === secondId &&
+        results[0].completed.status === 'Completed' &&
+        list?.kind === 'failure' &&
+        list.source?.type === 'perspective' &&
+        list.source.selector === missing &&
+        list.error === 'OmniFocusPerspectiveNotFound' &&
+        typeof list.message === 'string'
+          ? undefined
+          : `completion receipt or nested list failure is wrong: ${JSON.stringify({ results, list })}`,
     )
 
     const closed = await call('omnifocus_create_task', {

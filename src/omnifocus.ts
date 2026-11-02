@@ -24,6 +24,7 @@ import {
 import {
   CompleteResults,
   CompleteTasksParams,
+  CompleteTasksResponse,
   CreatedProject,
   CreatedTag,
   CreateProjectParams,
@@ -35,6 +36,8 @@ import {
   PerspectiveList,
   PerspectiveParams,
   ProjectList,
+  type ReturnedList,
+  type ReturnListSource,
   ScriptFailure,
   Snapshot,
   TagList,
@@ -267,9 +270,9 @@ export const OmniFocusToolkit = Toolkit.make(
   ),
   omnifocusTool(
     'omnifocus_complete_tasks',
-    "Complete one or more OmniFocus tasks, or with skip drop just the current occurrence of a repeating one. Every task is checked before any changes: if one can't be completed, nothing changes and the error names each one that can't. For a repeating task pass the deferDate a tool returned for it; if the task has moved on since (completed on another device, or by an earlier call), that is OmniFocusOccurrenceMoved, and leaving deferDate out is OmniFocusOccurrenceRequired. That check only looks at deferDate, so it can't tell apart occurrences of a repeating task that has no defer date. A task that does not repeat needs no deferDate, and completing it again changes nothing. A task listed twice, or with a group or project it is inside, is OmniFocusTasksOverlap, since completing it can complete that too.",
+    "Complete one or more OmniFocus tasks, or with skip drop just the current occurrence of a repeating one. Every task is checked before any changes: if one can't be completed, nothing changes and the error names each one that can't. For a repeating task pass the deferDate a tool returned for it; if the task has moved on since (completed on another device, or by an earlier call), that is OmniFocusOccurrenceMoved, and leaving deferDate out is OmniFocusOccurrenceRequired. That check only looks at deferDate, so it can't tell apart occurrences of a repeating task that has no defer date. A task that does not repeat needs no deferDate, and completing it again changes nothing. A task listed twice, or with a group or project it is inside, is OmniFocusTasksOverlap, since completing it can complete that too. Optional returnList reads a perspective, project or tag after completion, at most 100 tasks with omitted counting the rest. The read is separate, not atomic with completion. A list failure retains the completion results; retry only the read.",
     CompleteTasksParams,
-    CompleteResults,
+    CompleteTasksResponse,
     'changes',
   ),
 )
@@ -336,6 +339,33 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
       }
     })
 
+    const find = (p: FindTasksParams) =>
+      omnifocus.evaluate(
+        'find tasks',
+        program(findTasks, { ...p, limit: FIND_LIMIT }),
+        FoundTasks,
+      )
+
+    const readReturnedList = (source: ReturnListSource) => {
+      switch (source.type) {
+        case 'perspective':
+          return perspectiveTasks(source.selector).pipe(
+            Effect.map(({ tasks }) => ({
+              tasks: tasks.slice(0, FIND_LIMIT),
+              omitted: Math.max(0, tasks.length - FIND_LIMIT),
+            })),
+          )
+        case 'project':
+          return find({ project: source.selector })
+        case 'tag':
+          return find({ tag: source.selector })
+        default: {
+          const exhaustive: never = source.type
+          return exhaustive
+        }
+      }
+    }
+
     return {
       omnifocus_list_perspectives: () =>
         omnifocus
@@ -363,14 +393,7 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
           ),
       omnifocus_perspective_tasks: ({ perspective }) =>
         perspectiveTasks(perspective).pipe(toFailure),
-      omnifocus_find_tasks: (p) =>
-        omnifocus
-          .evaluate(
-            'find tasks',
-            program(findTasks, { ...p, limit: FIND_LIMIT }),
-            FoundTasks,
-          )
-          .pipe(toFailure),
+      omnifocus_find_tasks: (p) => find(p).pipe(toFailure),
       omnifocus_list_tags: () =>
         omnifocus
           .evaluate('list tags', program(listTags, {}), TagList)
@@ -396,13 +419,29 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
           .evaluate('update task', program(updateTask, p), TaskResult)
           .pipe(toFailure),
       omnifocus_complete_tasks: (p) =>
-        omnifocus
-          .evaluate(
+        Effect.gen(function* () {
+          const receipt = yield* omnifocus.evaluate(
             'complete tasks',
-            program(completeTasks, p),
+            program(completeTasks, { tasks: p.tasks }),
             CompleteResults,
           )
-          .pipe(toFailure),
+          const source = p.returnList
+          if (source === undefined) return receipt
+          const list = yield* readReturnedList(source).pipe(
+            Effect.match({
+              onSuccess: (found) =>
+                ({ kind: 'success', source, ...found }) satisfies ReturnedList,
+              onFailure: (e) =>
+                ({
+                  kind: 'failure',
+                  source,
+                  error: e._tag,
+                  message: e.message,
+                }) satisfies ReturnedList,
+            }),
+          )
+          return { ...receipt, list }
+        }).pipe(toFailure),
     }
   }),
 )
