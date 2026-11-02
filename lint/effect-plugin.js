@@ -12,10 +12,18 @@ const isEffect = (node, name) =>
   !node.computed &&
   (name === undefined || node.property.name === name)
 
-// `Effect.gen(...)`, `Effect.gen(...).pipe(...)` or `Effect.scoped(Effect.gen(...))`.
+// `Effect.runPromise`, `runtime.runSync` and the like turn an Effect into something that isn't one.
+const isRunner = (node) =>
+  (node?.type === 'MemberExpression'
+    ? node.property.name
+    : node?.name
+  )?.startsWith('run') === true
+
+// `Effect.gen(...)`, `Effect.gen(...).pipe(...)` or `Effect.scoped(Effect.gen(...))`, but not a run of one.
 const isGen = (node) => {
   if (node?.type !== 'CallExpression') return false
   if (isEffect(node.callee, 'gen')) return true
+  if (isRunner(node.callee) || node.arguments.some(isRunner)) return false
   if (node.callee.type === 'MemberExpression' && !isEffect(node.callee))
     return isGen(node.callee.object)
   return isEffect(node.callee) && isGen(node.arguments[0])
