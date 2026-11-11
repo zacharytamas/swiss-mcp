@@ -14,12 +14,12 @@ export class ShortcutNotFound extends Schema.TaggedError<ShortcutNotFound>()(
 
 export class ShortcutFailed extends Schema.TaggedError<ShortcutFailed>()(
   'ShortcutFailed',
-  { ...fields, exitCode: Schema.Number, stderr: Schema.String },
+  { ...fields, exitCode: Schema.Finite, stderr: Schema.String },
 ) {}
 
 export class ShortcutTimedOut extends Schema.TaggedError<ShortcutTimedOut>()(
   'ShortcutTimedOut',
-  { ...fields, timeoutMs: Schema.Number },
+  { ...fields, timeoutMs: Schema.Finite },
 ) {}
 
 export class ShortcutOutputInvalid extends Schema.TaggedError<ShortcutOutputInvalid>()(

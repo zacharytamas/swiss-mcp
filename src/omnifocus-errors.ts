@@ -4,12 +4,12 @@ const fields = { message: Schema.String }
 
 export class OmniFocusFailed extends Schema.TaggedError<OmniFocusFailed>()(
   'OmniFocusFailed',
-  { ...fields, exitCode: Schema.Number, stderr: Schema.String },
+  { ...fields, exitCode: Schema.Finite, stderr: Schema.String },
 ) {}
 
 export class OmniFocusTimedOut extends Schema.TaggedError<OmniFocusTimedOut>()(
   'OmniFocusTimedOut',
-  { ...fields, timeoutMs: Schema.Number },
+  { ...fields, timeoutMs: Schema.Finite },
 ) {}
 
 export class OmniFocusOutputInvalid extends Schema.TaggedError<OmniFocusOutputInvalid>()(

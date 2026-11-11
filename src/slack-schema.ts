@@ -54,7 +54,7 @@ const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
       Schema.Array(Schema.suspend((): Schema.Codec<RawBlock> => RawBlock)),
     ),
   ),
-  value: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
+  value: Schema.optional(Schema.Union([Schema.Finite, Schema.String])),
   url: Schema.optional(Schema.String),
   user_id: Schema.optional(Schema.String),
   channel_id: Schema.optional(Schema.String),
@@ -62,7 +62,7 @@ const RawBlock: Schema.Codec<RawBlock> = Schema.Struct({
   range: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String),
   fallback: Schema.optional(Schema.String),
-  timestamp: Schema.optional(Schema.Number),
+  timestamp: Schema.optional(Schema.Finite),
   alt_text: Schema.optional(Schema.String),
   title: Schema.optional(Schema.Union([Schema.String, TextObject])),
   // Lists and buttons send a string `style`, which says nothing about how text looks.
@@ -107,7 +107,7 @@ const Content = {
 const RawReaction = Schema.Struct({
   name: Schema.String,
   users: Schema.Array(Schema.String),
-  count: Schema.optional(Schema.Number),
+  count: Schema.optional(Schema.Finite),
 })
 
 export const RawMessage = Schema.Struct({
@@ -116,7 +116,7 @@ export const RawMessage = Schema.Struct({
   user: Maybe(Schema.String),
   username: Maybe(Schema.String),
   text: Maybe(Schema.String),
-  reply_count: Schema.optional(Schema.Number),
+  reply_count: Schema.optional(Schema.Finite),
   reactions: Schema.optional(Schema.Array(RawReaction)),
   ...Content,
 })
@@ -163,7 +163,7 @@ const RawConversation = Schema.Struct({
   is_mpim: Schema.optional(Schema.Boolean),
   is_private: Schema.optional(Schema.Boolean),
   is_archived: Schema.optional(Schema.Boolean),
-  num_members: Schema.optional(Schema.Number),
+  num_members: Schema.optional(Schema.Finite),
   topic: Schema.optional(Schema.Struct({ value: Schema.String })),
   purpose: Schema.optional(Schema.Struct({ value: Schema.String })),
 })
@@ -200,7 +200,7 @@ export const ImPage = Schema.Struct({
 })
 export const SearchMessages = Schema.Struct({
   messages: Schema.Struct({
-    total: Schema.Number,
+    total: Schema.Finite,
     matches: Schema.Array(RawSearchMatch),
   }),
 })
@@ -236,12 +236,12 @@ export const Message = Schema.Struct({
   fromMe: Schema.Boolean,
   text: Schema.String,
   permalink: Schema.String,
-  replyCount: Schema.optionalKey(Schema.Number),
+  replyCount: Schema.optionalKey(Schema.Finite),
   reactions: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
         name: Schema.String,
-        count: Schema.Number,
+        count: Schema.Finite,
         byMe: Schema.Boolean,
       }),
     ),
@@ -251,7 +251,7 @@ export type Message = typeof Message.Type
 
 export const Reaction = Schema.Struct({
   name: Schema.String,
-  count: Schema.Number,
+  count: Schema.Finite,
   byMe: Schema.Boolean,
   users: Schema.Array(
     Schema.Struct({ id: Schema.String, name: Schema.String }),
@@ -275,7 +275,7 @@ export const ChannelInfo = Schema.Struct({
   ...ChannelRef.fields,
   dmWith: Schema.optionalKey(Schema.String),
   archived: Schema.Boolean,
-  members: Schema.optionalKey(Schema.Number),
+  members: Schema.optionalKey(Schema.Finite),
   topic: Schema.optionalKey(Schema.String),
   purpose: Schema.optionalKey(Schema.String),
 })
@@ -298,7 +298,7 @@ export const ToolFailure = Schema.Struct({
 
 export const Count = (maximum: number) =>
   Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }))
-export const Hours = Schema.Number.check(
+export const Hours = Schema.Finite.check(
   Schema.isBetween({ minimum: 0, maximum: 24 * 90 }),
 )
 export const Since = Schema.String.check(
@@ -355,6 +355,6 @@ export const Conversation = Schema.Struct({
 })
 export const Mention = Schema.Struct({
   via: Schema.Array(Schema.Literals(['direct', 'group', 'name'])),
-  ageHours: Schema.Number,
+  ageHours: Schema.Finite,
   message: Message,
 })

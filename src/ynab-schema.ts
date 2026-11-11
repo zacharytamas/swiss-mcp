@@ -6,10 +6,10 @@ export const ToolFailure = Schema.Struct({
 })
 
 export const DailyPace = Schema.Struct({
-  dailyPace: Schema.Number,
+  dailyPace: Schema.Finite,
   days: Schema.Int,
   targetDate: Schema.String,
-  readyToAssign: Schema.Number,
+  readyToAssign: Schema.Finite,
   budgetId: Schema.String,
 })
 
