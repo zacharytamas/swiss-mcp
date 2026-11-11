@@ -128,8 +128,9 @@ describe('OmniFocus.evaluate', () => {
     const exit = await runWith(
       cli.layer,
       Effect.flatMap(OmniFocus, (of) =>
-        Effect.all(
-          ['a', 'b', 'c'].map((s) => of.evaluate('echo', s, Schema.String)),
+        Effect.forEach(
+          ['a', 'b', 'c'],
+          (s) => of.evaluate('echo', s, Schema.String),
           { concurrency: 'unbounded' },
         ),
       ),
@@ -170,9 +171,7 @@ describe('completion followup failure boundary', () => {
         evaluate: (operation, _source, output) => {
           operations.push(operation)
           if (operations.length === 1) {
-            return Schema.decodeUnknownEffect(output)(receipt).pipe(
-              Effect.orDie,
-            )
+            return Schema.decodeEffect(output)(receipt).pipe(Effect.orDie)
           }
           return kind === 'defect'
             ? Effect.die('read defect')

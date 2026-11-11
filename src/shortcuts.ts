@@ -194,9 +194,7 @@ const make = Effect.gen(function* () {
       )
     }
 
-    return yield* Schema.decodeUnknownEffect(
-      Schema.fromJsonString(contract.output),
-    )(
+    return yield* Schema.decodeEffect(Schema.fromJsonString(contract.output))(
       result.stdout.trim() === '' && contract.whenEmpty !== undefined
         ? contract.whenEmpty
         : result.stdout,
