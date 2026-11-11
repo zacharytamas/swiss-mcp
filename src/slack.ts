@@ -1330,7 +1330,7 @@ export const SlackToolkit = Toolkit.make(
         }),
       ),
     }),
-    Schema.Struct({ total: Schema.Number, messages: Schema.Array(Message) }),
+    Schema.Struct({ total: Schema.Finite, messages: Schema.Array(Message) }),
     'reads',
   ),
   slackTool(
@@ -1445,7 +1445,7 @@ export const SlackToolkit = Toolkit.make(
     Schema.Struct({
       me: Me,
       searchedFor: Schema.Array(Schema.String),
-      checked: Schema.Number,
+      checked: Schema.Finite,
       unanswered: Schema.Array(Mention),
       undetermined: Schema.Array(Mention),
       notes: Schema.Array(Schema.String),

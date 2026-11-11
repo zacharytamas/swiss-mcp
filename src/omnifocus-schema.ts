@@ -344,7 +344,7 @@ export type FindTasksParams = typeof FindTasksParams.Type
 
 export const FoundTasks = Schema.Struct({
   tasks: Schema.Array(Task),
-  omitted: Schema.Number.annotate({
+  omitted: Schema.Finite.annotate({
     description:
       'How many more tasks matched than are listed. When it is not 0, narrow the search.',
   }),
