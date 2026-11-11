@@ -144,7 +144,7 @@ const make = Effect.gen(function* () {
         output: result.stdout.slice(0, OUTPUT_LIMIT),
         message: `OmniFocus ${operation} ran, but its output is invalid, so any changes it made have already happened: ${cause.message}`,
       })
-    const json = yield* Schema.decodeUnknownEffect(
+    const json = yield* Schema.decodeEffect(
       Schema.fromJsonString(Schema.Unknown),
     )(result.stdout).pipe(Effect.mapError(invalid))
     const refusal = Schema.decodeUnknownOption(ScriptFailure)(json)
