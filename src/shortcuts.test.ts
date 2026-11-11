@@ -150,10 +150,11 @@ const runWith = <A, E>(
 ) =>
   Effect.runPromiseExit(
     effect.pipe(
-      Effect.provide(Shortcuts.layer),
-      Effect.provide(layer),
-      Effect.provide(focus),
-      Effect.provide(BunFileSystem.layer),
+      Effect.provide(
+        Shortcuts.layer.pipe(
+          Layer.provide(Layer.mergeAll(layer, focus, BunFileSystem.layer)),
+        ),
+      ),
     ),
   )
 
