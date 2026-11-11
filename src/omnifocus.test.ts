@@ -99,7 +99,7 @@ const runWith = <A, E>(
   effect: Effect.Effect<A, E, OmniFocus>,
 ) =>
   Effect.runPromiseExit(
-    effect.pipe(Effect.provide(OmniFocus.layer), Effect.provide(layer)),
+    effect.pipe(Effect.provide(OmniFocus.layer.pipe(Layer.provide(layer)))),
   )
 
 describe('OmniFocus.evaluate', () => {
@@ -189,7 +189,9 @@ describe('completion followup failure boundary', () => {
             })
             return yield* Stream.runCollect(stream)
           }),
-        ).pipe(Effect.provide(OmniFocusToolkitLive), Effect.provide(native)),
+        ).pipe(
+          Effect.provide(OmniFocusToolkitLive.pipe(Layer.provide(native))),
+        ),
       )
       expect(operations).toEqual(['complete tasks', 'find tasks'])
       expect(Exit.isFailure(exit)).toBe(true)

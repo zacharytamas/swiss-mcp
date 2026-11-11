@@ -68,7 +68,7 @@ const run = <A>(
   effect: Effect.Effect<A, never, Focus>,
 ) =>
   Effect.runPromise(
-    effect.pipe(Effect.provide(Focus.layer), Effect.provide(layer)),
+    effect.pipe(Effect.provide(Focus.layer.pipe(Layer.provide(layer)))),
   )
 
 const frontmost = Effect.flatMap(Focus, (focus) => focus.frontmost)
