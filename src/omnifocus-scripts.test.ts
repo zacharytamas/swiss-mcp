@@ -584,6 +584,27 @@ describe('dropTasks', () => {
     expect(task.completed).toBe(true)
   })
 
+  test('dropping a group drops the open tasks inside it and leaves a completed one completed', () => {
+    const group = existing({ name: 'Move house' })
+    const open = existing({ name: 'Pack', parent: group })
+    const nested = existing({ name: 'Label boxes', parent: open })
+    const done = existing({
+      name: 'Book van',
+      parent: group,
+      taskStatus: Status.Completed,
+      completed: true,
+    })
+
+    drop(group.id.primaryKey)
+
+    expect([group, open, nested, done].map((t) => t.taskStatus)).toEqual([
+      Status.Dropped,
+      Status.Dropped,
+      Status.Dropped,
+      Status.Completed,
+    ])
+  })
+
   test('an unknown id and a project in one batch change nothing, and the refusal names both', () => {
     const fine = existing({ name: 'Fine' })
     const root = existing({

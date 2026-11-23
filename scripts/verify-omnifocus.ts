@@ -569,6 +569,19 @@ if (write) {
           ? undefined
           : 'created not repeating',
     )
+    const projectTaskIds = async () =>
+      (
+        await step(
+          'omnifocus_find_tasks',
+          { project: projectId, includeClosed: true },
+          ({ omitted }) =>
+            omitted === 0 ? undefined : `${omitted} tasks omitted`,
+        )
+      ).tasks
+        .map((t: Item) => t.id)
+        .sort()
+        .join()
+    const beforeDrop = await projectTaskIds()
     await step(
       'omnifocus_drop_tasks',
       { ids: [repeating.task.id] },
@@ -579,6 +592,13 @@ if (write) {
         task.deferDate !== repeating.task.deferDate
           ? `dropped repeating task is ${JSON.stringify(task)}, not dropped with its repeat and deferDate kept`
           : undefined,
+    )
+    const afterDrop = await projectTaskIds()
+    report(
+      'dropping a repeating task adds no task to the project',
+      afterDrop === beforeDrop
+        ? undefined
+        : `task ids went from ${beforeDrop} to ${afterDrop}`,
     )
 
     const whole = await call('omnifocus_drop_tasks', { ids: [projectId] })

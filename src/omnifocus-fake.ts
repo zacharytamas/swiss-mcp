@@ -171,11 +171,13 @@ class FakeTask {
   markComplete() {
     return this.resolve(Status.Completed, true)
   }
-  // Measured: drop(true) drops the task itself and keeps its rule; drop(false) drops just this occurrence.
+  // Measured: drop(true) drops the task itself, keeps its rule, and drops the open tasks inside it; a completed one
+  // inside stays completed. drop(false) drops just this occurrence.
   drop(allOccurrences: boolean) {
     if (allOccurrences) {
       this.taskStatus = Status.Dropped
       this.completed = false
+      for (const t of tasks) if (t.parent === this && !t.completed) t.drop(true)
     } else this.resolve(Status.Dropped, false)
   }
 }
