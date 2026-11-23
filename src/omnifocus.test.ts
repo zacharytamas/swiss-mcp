@@ -378,6 +378,7 @@ describe('OmniFocus tools over MCP', () => {
       ['omnifocus_create_task', false, false, true],
       ['omnifocus_update_task', false, true, true],
       ['omnifocus_complete_tasks', false, true, true],
+      ['omnifocus_drop_tasks', false, true, false],
     ])
   })
 
@@ -908,6 +909,26 @@ describe('OmniFocus tools over MCP', () => {
 
   test('a complete with no tasks is rejected before OmniFocus is called', async () => {
     const reply = await callTool('omnifocus_complete_tasks', { tasks: [] })
+
+    expect(reply.error ?? reply.result.isError).toBeTruthy()
+    expect(await Bun.file(join(dir, 'source.js')).exists()).toBe(false)
+  })
+
+  test('a drop sends the ids as given and returns what OmniFocus stored', async () => {
+    const dropped = HOME_TASKS.map((t) => ({ ...t, status: 'Dropped' }))
+
+    const reply = await callTool(
+      'omnifocus_drop_tasks',
+      { ids: ['t3', 't2'] },
+      { reply: JSON.stringify({ tasks: dropped }) },
+    )
+
+    expect((await sent()).args).toEqual({ ids: ['t3', 't2'] })
+    expect(reply.result.structuredContent).toEqual({ tasks: dropped })
+  })
+
+  test('a drop with no ids is rejected before OmniFocus is called', async () => {
+    const reply = await callTool('omnifocus_drop_tasks', { ids: [] })
 
     expect(reply.error ?? reply.result.isError).toBeTruthy()
     expect(await Bun.file(join(dir, 'source.js')).exists()).toBe(false)

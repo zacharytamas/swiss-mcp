@@ -402,6 +402,17 @@ export const CompleteTasksParams = Schema.Struct({
 })
 export type CompleteTasksParams = typeof CompleteTasksParams.Type
 
+export const DropTasksParams = Schema.Struct({
+  ids: Schema.Array(TaskId).check(Schema.isMinLength(1)),
+})
+export type DropTasksParams = typeof DropTasksParams.Type
+
+export const DroppedTasks = Schema.Struct({
+  tasks: Schema.Array(Task).annotate({
+    description: 'One per id, in the order given, as OmniFocus stored it.',
+  }),
+})
+
 export const ToolFailure = Schema.Struct({
   error: Schema.String,
   message: Schema.String,
