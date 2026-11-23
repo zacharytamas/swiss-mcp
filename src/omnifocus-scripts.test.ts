@@ -24,6 +24,7 @@ import type {
 import {
   completeTasks,
   createTask,
+  dropTasks,
   findTasks,
   updateTask,
 } from './omnifocus-scripts.ts'
@@ -537,6 +538,71 @@ describe('completeTasks', () => {
       deferDate: '2026-10-28 06:00',
       repeat: { rule: 'FREQ=DAILY' },
     })
+  })
+})
+
+describe('dropTasks', () => {
+  const drop = (...ids: ReadonlyArray<string>) => evaluate(dropTasks, { ids })
+
+  test('drops plain and repeating tasks, keeping the repeat, and answers in the order given', () => {
+    const plain = existing({ name: 'Plain' })
+    const daily = existing({
+      name: 'Stretch',
+      deferDate: local(2026, 10, 27, 6, 0),
+      repetitionRule: new FakeRule('FREQ=DAILY', null, null, null, null),
+    })
+    const before = tasks.length
+
+    const reply = drop(daily.id.primaryKey, plain.id.primaryKey)
+
+    expect(reply.tasks).toMatchObject([
+      {
+        id: daily.id.primaryKey,
+        status: 'Dropped',
+        deferDate: '2026-10-27 06:00',
+        repeat: { rule: 'FREQ=DAILY' },
+      },
+      { id: plain.id.primaryKey, status: 'Dropped', repeat: null },
+    ])
+    expect(tasks.length).toBe(before)
+  })
+
+  test('dropping a task again changes nothing', () => {
+    const task = existing()
+
+    const first = drop(task.id.primaryKey)
+    const again = drop(task.id.primaryKey)
+
+    expect(again).toEqual(first)
+    expect(task.taskStatus).toBe(Status.Dropped)
+  })
+
+  test('a completed task is left completed', () => {
+    const task = existing({ taskStatus: Status.Completed, completed: true })
+
+    expect(drop(task.id.primaryKey).tasks[0].status).toBe('Completed')
+    expect(task.completed).toBe(true)
+  })
+
+  test('an unknown id and a project in one batch change nothing, and the refusal names both', () => {
+    const fine = existing({ name: 'Fine' })
+    const root = existing({
+      name: 'Housekeeping',
+      containingProject: housekeeping,
+      project: housekeeping,
+    })
+
+    const reply = drop(fine.id.primaryKey, 'gone', root.id.primaryKey)
+
+    expect(reply).toEqual({
+      _tag: 'OmniFocusTaskNotFound',
+      message:
+        '2 of the 3 tasks can\'t be dropped, so nothing changed. OmniFocusTaskNotFound: No OmniFocus task has the id "gone". OmniFocusTaskIsProject: "Housekeeping" is the project "Domestic/Housekeeping" itself, not a task in it, and dropping it here would drop the whole project.',
+    })
+    expect([fine.taskStatus, root.taskStatus]).toEqual([
+      Status.Available,
+      Status.Available,
+    ])
   })
 })
 

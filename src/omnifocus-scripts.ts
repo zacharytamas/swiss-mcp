@@ -3,6 +3,7 @@ import type {
   CreateProjectParams,
   CreateTagParams,
   CreateTaskParams,
+  DropTasksParams,
   FindTasksParams,
   ScriptFailure,
   UpdateTaskParams,
@@ -246,6 +247,32 @@ const lib = () => {
   const find = (id: string) =>
     Task.byIdentifier(id) ??
     fail('OmniFocusTaskNotFound', `No OmniFocus task has the id "${id}".`)
+  const checkEach = <T, R>(
+    items: ReadonlyArray<T>,
+    check: (item: T, at: number) => R,
+    verb: string,
+  ) => {
+    const problems: Array<ScriptFailure> = []
+    const checked = items.flatMap((item, at) => {
+      try {
+        return [check(item, at)]
+      } catch (e) {
+        if (!(e instanceof Refusal)) throw e
+        problems.push(e.failure)
+        return []
+      }
+    })
+    const [first] = problems
+    if (first !== undefined) {
+      return fail(
+        first._tag,
+        problems.length === 1
+          ? `${first.message} Nothing changed.`
+          : `${problems.length} of the ${items.length} tasks can't be ${verb}, so nothing changed. ${problems.map((p) => `${p._tag}: ${p.message}`).join(' ')}`,
+      )
+    }
+    return checked
+  }
 
   // What the first test that matches anything matches.
   const firstMatch = <T>(
@@ -361,6 +388,7 @@ const lib = () => {
     repetitionRule,
     task,
     find,
+    checkEach,
     firstMatch,
     tags,
     project,
@@ -710,25 +738,11 @@ export const completeTasks: Script<CompleteTasksParams> = (args, omni) => {
     return task
   }
 
-  const problems: Array<ScriptFailure> = []
-  const checked = args.tasks.flatMap((item, at) => {
-    try {
-      return [{ item, task: check(item, at) }]
-    } catch (e) {
-      if (!(e instanceof omni.Refusal)) throw e
-      problems.push(e.failure)
-      return []
-    }
-  })
-  const [first] = problems
-  if (first !== undefined) {
-    return omni.fail(
-      first._tag,
-      problems.length === 1
-        ? `${first.message} Nothing changed.`
-        : `${problems.length} of the ${args.tasks.length} tasks can't be completed, so nothing changed. ${problems.map((p) => `${p._tag}: ${p.message}`).join(' ')}`,
-    )
-  }
+  const checked = omni.checkEach(
+    args.tasks,
+    (item, at) => ({ item, task: check(item, at) }),
+    'completed',
+  )
 
   const { Dropped } = Task.Status
   const complete = (task: OFTask, skip: boolean) => {
@@ -758,4 +772,25 @@ export const completeTasks: Script<CompleteTasksParams> = (args, omni) => {
       ...complete(task, item.skip === true),
     })),
   }
+}
+
+// drop(true) drops every occurrence of a repeating task and keeps its rule, and drops a group's tasks with it; on a
+// completed task it would turn it dropped, so a completed one is left as it is (measured on OmniFocus 4.9).
+export const dropTasks: Script<DropTasksParams> = (args, omni) => {
+  const checked = omni.checkEach(
+    args.ids,
+    (id) => {
+      const task = omni.find(id)
+      if (task.project !== null) {
+        omni.fail(
+          'OmniFocusTaskIsProject',
+          `"${task.name}" is the project "${omni.projectPath(task.project)}" itself, not a task in it, and dropping it here would drop the whole project.`,
+        )
+      }
+      return task
+    },
+    'dropped',
+  )
+  for (const task of checked) if (!task.completed) task.drop(true)
+  return { tasks: checked.map(omni.task) }
 }

@@ -4,7 +4,9 @@
 // one. In the project, create, update, complete and skip a throwaway repeating task, move it to the Inbox and back,
 // check returned project/tag/perspective lists, a failed list after completion, and newly available sequential tasks.
 // Check a task and one inside it are refused together, complete it with a second task in one call, and check a
-// dropped throwaway project takes no task. Then delete every task, project and tag with the throwaway names.
+// dropped throwaway project takes no task. Drop a throwaway task twice and a repeating one (its repeat kept), and
+// check dropping the throwaway project itself is refused and leaves it active. Then delete every task, project and tag
+// with the throwaway names.
 // A failed write step stops the ones after it, so nothing acts on a task the server returned wrongly.
 // --parity: compare each supported perspective's tasks with what OmniFocus renders for it in a temporary tab.
 import { Schema } from 'effect'
@@ -535,6 +537,64 @@ if (write) {
         : `expected OmniFocusProjectClosed, got ${JSON.stringify(closed.error ?? closed.content)}`,
       closed.error,
     )
+
+    const toDrop = await step(
+      'omnifocus_create_task',
+      { name, project },
+      ({ task }) => (task?.repeat === null ? undefined : 'created repeating'),
+    )
+    for (const attempt of ['first', 'again']) {
+      await step(
+        'omnifocus_drop_tasks',
+        { ids: [toDrop.task.id] },
+        ({ tasks }) =>
+          tasks?.length === 1 &&
+          tasks[0].id === toDrop.task.id &&
+          tasks[0].status === 'Dropped'
+            ? undefined
+            : `dropping ${attempt} returned ${JSON.stringify(tasks)}, not the plain task dropped`,
+      )
+    }
+
+    const repeating = await step(
+      'omnifocus_create_task',
+      {
+        name,
+        project,
+        deferDate: today,
+        repeat: { rule: 'FREQ=DAILY' },
+      },
+      ({ task }) =>
+        task?.repeat?.rule === 'FREQ=DAILY'
+          ? undefined
+          : 'created not repeating',
+    )
+    await step(
+      'omnifocus_drop_tasks',
+      { ids: [repeating.task.id] },
+      ({ tasks: [task] }) =>
+        task?.id !== repeating.task.id ||
+        task.status !== 'Dropped' ||
+        task.repeat?.rule !== 'FREQ=DAILY' ||
+        task.deferDate !== repeating.task.deferDate
+          ? `dropped repeating task is ${JSON.stringify(task)}, not dropped with its repeat and deferDate kept`
+          : undefined,
+    )
+
+    const whole = await call('omnifocus_drop_tasks', { ids: [projectId] })
+    report(
+      `omnifocus_drop_tasks on a project itself (${whole.ms} ms)`,
+      whole.error?.error === 'OmniFocusTaskIsProject'
+        ? undefined
+        : `expected OmniFocusTaskIsProject, got ${JSON.stringify(whole.error ?? whole.content)}`,
+      whole.error,
+    )
+    await step('omnifocus_list_projects', {}, ({ projects }) => {
+      const status = projects?.find((p: Item) => p.id === projectId)?.status
+      return status === 'Active'
+        ? undefined
+        : `the throwaway project is ${status} after a refused drop`
+    })
   } catch (e) {
     report('write checks', (e as Error).message)
   } finally {

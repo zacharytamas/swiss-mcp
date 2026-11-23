@@ -171,9 +171,12 @@ class FakeTask {
   markComplete() {
     return this.resolve(Status.Completed, true)
   }
+  // Measured: drop(true) drops the task itself and keeps its rule; drop(false) drops just this occurrence.
   drop(allOccurrences: boolean) {
-    if (allOccurrences) this.repetitionRule = null
-    this.resolve(Status.Dropped, false)
+    if (allOccurrences) {
+      this.taskStatus = Status.Dropped
+      this.completed = false
+    } else this.resolve(Status.Dropped, false)
   }
 }
 

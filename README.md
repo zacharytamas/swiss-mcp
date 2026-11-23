@@ -63,6 +63,7 @@ Measured on Due 26.4.4:
 | `omnifocus_create_task`       | Add a task to a `project`, or to the Inbox without one (`name`, `note`, `tags`, `deferDate`, `dueDate`, `repeat`)                         |
 | `omnifocus_update_task`       | Change a task by `id`; leave a field out to keep it; `project` moves it; `clear` removes a date, the repeat or the project (to the Inbox) |
 | `omnifocus_complete_tasks`    | Complete one or more tasks, or with `skip` drop just an occurrence; a repeating task needs the `deferDate` you saw; all or nothing        |
+| `omnifocus_drop_tasks`        | Drop one or more tasks by `ids`, every occurrence of a repeating one; a completed task stays completed; all or nothing                    |
 
 ### How it works
 
@@ -70,7 +71,7 @@ The server runs `osascript -l JavaScript`, which hands an OmniJS program to Omni
 
 A perspective's tasks are worked out in `src/perspectives.ts`. One call reads every remaining task, the tags, and each custom perspective's filter rules, and the rules are evaluated the way OmniFocus does: a tag also matches the tags nested under it, and a rule whose tags were all deleted is ignored.
 
-What a task means is left to OmniFocus. `status` is OmniFocus's own task status. A date without a time gets the default start or due time from OmniFocus's settings. A repeat is an OmniFocus repetition rule, and any field you leave out gets OmniFocus's default. Completing a repeating task twice moves it on twice, so `omnifocus_complete_tasks` takes the `deferDate` you saw for a repeating task and changes nothing if the task has moved on since. It checks every task before completing any, so a refused call changes nothing. No tool creates folders or perspectives, and none deletes anything. `omnifocus_create_task` never creates the tags or project it is given; a name that doesn't exist is an error, so a typo can't make a stray tag.
+What a task means is left to OmniFocus. `status` is OmniFocus's own task status. A date without a time gets the default start or due time from OmniFocus's settings. A repeat is an OmniFocus repetition rule, and any field you leave out gets OmniFocus's default. Completing a repeating task twice moves it on twice, so `omnifocus_complete_tasks` takes the `deferDate` you saw for a repeating task and changes nothing if the task has moved on since. It checks every task before completing any, so a refused call changes nothing, and `omnifocus_drop_tasks` does the same before dropping any. No tool creates folders or perspectives, and none deletes anything; dropping keeps the task in OmniFocus. `omnifocus_create_task` never creates the tags or project it is given; a name that doesn't exist is an error, so a typo can't make a stray tag.
 
 ### Return a list after completing tasks
 
@@ -103,7 +104,7 @@ The server completes the tasks, then reads the list in a separate evaluation. An
 
 ```sh
 bun scripts/verify-omnifocus.ts            # read-only: perspectives, tags, and each supported perspective's tasks
-bun scripts/verify-omnifocus.ts --write    # also creates a throwaway tag, project and tasks in it, updates, completes, skips and moves them, then deletes them
+bun scripts/verify-omnifocus.ts --write    # also creates a throwaway tag, project and tasks in it, updates, completes, skips, drops and moves them, then deletes them
 bun scripts/verify-omnifocus.ts --parity   # compares each supported perspective with what OmniFocus shows in a temporary tab
 ```
 

@@ -30,6 +30,8 @@ import {
   CreateProjectParams,
   CreateTagParams,
   CreateTaskParams,
+  DroppedTasks,
+  DropTasksParams,
   FindTasksParams,
   FoundTasks,
   PerspectiveInfo,
@@ -51,6 +53,7 @@ import {
   createProject,
   createTag,
   createTask,
+  dropTasks,
   findTasks,
   listPerspectives,
   listProjects,
@@ -272,6 +275,13 @@ export const OmniFocusToolkit = Toolkit.make(
     CompleteTasksResponse,
     'changes',
   ),
+  omnifocusTool(
+    'omnifocus_drop_tasks',
+    "Drop one or more OmniFocus tasks, every occurrence of a repeating one; to drop just the current occurrence, use omnifocus_complete_tasks with skip. Every task is checked before any changes: if one can't be dropped, nothing changes and the error names each one that can't. A dropped task stays dropped on a retry, and a completed one is left completed. Dropping a task also drops the tasks inside it. A project itself, as omnifocus_perspective_tasks or omnifocus_find_tasks may list it, can't be dropped here. Returns each task as OmniFocus stored it.",
+    DropTasksParams,
+    DroppedTasks,
+    'changes',
+  ),
 )
 
 const toTask = (t: Snapshot['tasks'][number]): Task => ({
@@ -439,6 +449,10 @@ export const OmniFocusToolkitLive = OmniFocusToolkit.toLayer(
           )
           return { ...receipt, list }
         }).pipe(toFailure),
+      omnifocus_drop_tasks: (p) =>
+        omnifocus
+          .evaluate('drop tasks', program(dropTasks, p), DroppedTasks)
+          .pipe(toFailure),
     }
   }),
 )
